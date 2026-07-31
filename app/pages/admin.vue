@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { categories } from '~/data/site'
+import { notifyMemeArchiveUpdated } from '~/utils/meme-archive-sync'
 import type {
   AdminAuditLog,
   AdminJokeSubmission,
@@ -262,6 +263,7 @@ async function approveJoke(item: AdminJokeSubmission) {
   clearFeedback()
   try {
     await api(`/api/admin/submissions/${encodeURIComponent(item.id)}/approve`, { method: 'POST' })
+    notifyMemeArchiveUpdated()
     message.value = '已通过，这条烂梗现在会出现在首页。'
     await loadCurrentPanel()
   } catch (caught) {
@@ -303,6 +305,7 @@ async function addJoke() {
         featured: jokeDraft.value.featured,
       },
     })
+    notifyMemeArchiveUpdated()
     jokeDraft.value = { text: '', category: categories[1]!, source: '', tags: '', featured: false }
     message.value = '烂梗已直接加入公开列表。'
     await loadCurrentPanel()
@@ -322,6 +325,7 @@ async function editJoke(item: Meme) {
       method: 'PATCH',
       body: { text, source },
     })
+    notifyMemeArchiveUpdated()
     message.value = '烂梗已更新。'
     await loadCurrentPanel()
   } catch (caught) {
@@ -336,6 +340,7 @@ async function toggleFeatured(item: Meme) {
       method: 'PATCH',
       body: { featured: !item.featured },
     })
+    notifyMemeArchiveUpdated()
     await loadCurrentPanel()
   } catch (caught) {
     error.value = readError(caught)
@@ -347,6 +352,7 @@ async function deleteJoke(item: Meme) {
   clearFeedback()
   try {
     await api(`/api/admin/jokes/${encodeURIComponent(item.id)}`, { method: 'DELETE' })
+    notifyMemeArchiveUpdated()
     message.value = '烂梗已删除。'
     await loadCurrentPanel()
   } catch (caught) {

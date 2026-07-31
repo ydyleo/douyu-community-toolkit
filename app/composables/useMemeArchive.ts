@@ -1,5 +1,9 @@
 import { categories, memes as seedMemes } from '~/data/site'
 import { localMemeRepository } from '~/repositories/meme-repository'
+import {
+  MEME_ARCHIVE_UPDATED_EVENT,
+  MEME_ARCHIVE_UPDATED_STORAGE_KEY,
+} from '~/utils/meme-archive-sync'
 import type { Meme, MemeSubmissionReceipt } from '#shared/types/meme'
 
 export type SortMode = 'newest' | 'popular'
@@ -43,6 +47,7 @@ export function useMemeArchive() {
   const showSubmit = ref(false)
   const hydrated = ref(false)
   const draft = ref({ text: '', category: categories[1]!, source: '', tags: '' })
+  let refreshPromise: Promise<void> | null = null
 
   // 正式数据放在前面：同一条梗既有本地暂存又已经公开时，只展示正式版本。
   const allMemes = computed(() => dedupeMemes([...remoteMemes.value, ...localMemes.value]))
@@ -97,6 +102,23 @@ export function useMemeArchive() {
     randomMeme.value = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0] ?? randomMeme.value
   }
 
+  function refreshRemoteMemes() {
+    if (refreshPromise) return refreshPromise
+    refreshPromise = (async () => {
+      const result = await api<{ items: Meme[] }>('/api/memes', { query: { pageSize: 100 } })
+      remoteMemes.value = dedupeMemes(result.items)
+      const remoteTexts = new Set(remoteMemes.value.map((meme) => normalizeMemeText(meme.text)))
+      localMemes.value = localMemes.value.filter((meme) => !remoteTexts.has(normalizeMemeText(meme.text)))
+      const serverCounts = Object.fromEntries(result.items.map((meme) => [meme.id, meme.copyCount ?? 0]))
+      copyCounts.value = Object.fromEntries(
+        Object.keys({ ...copyCounts.value, ...serverCounts }).map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),
+      )
+    })().finally(() => {
+      refreshPromise = null
+    })
+    return refreshPromise
+  }
+
   async function submitMeme() {
     const text = draft.value.text.trim()
     if (!text) {
@@ -149,24 +171,40 @@ export function useMemeArchive() {
     })
   }, { deep: true })
 
+  function refreshWhenVisible() {
+    if (document.visibilityState === 'visible') void refreshRemoteMemes()
+  }
+
+  function refreshFromStorage(event: StorageEvent) {
+    if (event.key === MEME_ARCHIVE_UPDATED_STORAGE_KEY) void refreshRemoteMemes()
+  }
+
+  function refreshFromAdmin() {
+    void refreshRemoteMemes()
+  }
+
   onMounted(async () => {
     const state = localMemeRepository.loadLocalState()
     localMemes.value = dedupeMemes(state.submissions)
     copyCounts.value = state.copyCounts
     likedIds.value = state.likedIds
     hydrated.value = true
+    window.addEventListener('focus', refreshWhenVisible)
+    window.addEventListener('storage', refreshFromStorage)
+    window.addEventListener(MEME_ARCHIVE_UPDATED_EVENT, refreshFromAdmin)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
     try {
-      const result = await api<{ items: Meme[] }>('/api/memes', { query: { pageSize: 100 } })
-      remoteMemes.value = dedupeMemes(result.items)
-      const remoteTexts = new Set(remoteMemes.value.map((meme) => normalizeMemeText(meme.text)))
-      localMemes.value = localMemes.value.filter((meme) => !remoteTexts.has(normalizeMemeText(meme.text)))
-      const serverCounts = Object.fromEntries(result.items.map((meme) => [meme.id, meme.copyCount ?? 0]))
-      copyCounts.value = Object.fromEntries(
-        Object.keys({ ...copyCounts.value, ...serverCounts }).map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),
-      )
+      await refreshRemoteMemes()
     } catch {
       // 离线时继续使用浏览器本地数据。
     }
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('focus', refreshWhenVisible)
+    window.removeEventListener('storage', refreshFromStorage)
+    window.removeEventListener(MEME_ARCHIVE_UPDATED_EVENT, refreshFromAdmin)
+    document.removeEventListener('visibilitychange', refreshWhenVisible)
   })
 
   return {
