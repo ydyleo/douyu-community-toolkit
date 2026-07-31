@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+.nuxt
+.output
+dist
+.env
+.env.*
+.DS_Store
+npm-debug.log*
+*.pem
+*.key
