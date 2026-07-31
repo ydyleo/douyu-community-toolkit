@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.4.1
+// @version      0.4.2
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -354,7 +354,7 @@
     if (panel.classList.contains('is-open')) {
       window.requestAnimationFrame(function () {
         applyPanelPosition();
-        if (!results.children.length) void search();
+        void search();
       });
     }
   });
