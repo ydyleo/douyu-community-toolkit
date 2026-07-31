@@ -210,10 +210,10 @@ onBeforeUnmount(clearMusicUnlock)
           <aside class="random-card" aria-live="polite">
             <div class="tape">随机一梗</div>
             <div class="quote-mark">“</div>
-            <p>{{ randomMeme?.text }}</p>
+            <p>{{ randomMeme?.text || '正在捞取最新烂梗……' }}</p>
             <div class="random-meta">
-              <span># {{ randomMeme?.category }}</span>
-              <button @click="pickRandom" aria-label="换一条">↻</button>
+              <span>{{ randomMeme ? `# ${randomMeme.category}` : '等待补给' }}</span>
+              <button :disabled="!allMemes.length" @click="pickRandom" aria-label="换一条">↻</button>
             </div>
           </aside>
         </div>

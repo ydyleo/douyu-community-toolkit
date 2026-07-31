@@ -1,4 +1,4 @@
-import { categories, memes as seedMemes } from '~/data/site'
+import { categories } from '~/data/site'
 import { localMemeRepository } from '~/repositories/meme-repository'
 import {
   MEME_ARCHIVE_UPDATED_EVENT,
@@ -38,11 +38,11 @@ export function useMemeArchive() {
   const selectedCategory = ref('全部')
   const query = ref('')
   const sortMode = ref<SortMode>('newest')
-  const randomMeme = ref<Meme>(seedMemes.find((meme) => meme.featured) ?? seedMemes[0]!)
+  const randomMeme = ref<Meme | null>(null)
   const copyCounts = ref<Record<string, number>>({})
   const likedIds = ref<string[]>([])
   const localMemes = ref<Meme[]>([])
-  const remoteMemes = ref<Meme[]>(seedMemes)
+  const remoteMemes = ref<Meme[]>([])
   const toast = ref('')
   const showSubmit = ref(false)
   const hydrated = ref(false)
@@ -99,7 +99,7 @@ export function useMemeArchive() {
   function pickRandom() {
     const pool = filteredMemes.value.length ? filteredMemes.value : allMemes.value
     const candidates = pool.filter((meme) => meme.id !== randomMeme.value?.id)
-    randomMeme.value = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0] ?? randomMeme.value
+    randomMeme.value = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0] ?? null
   }
 
   function refreshRemoteMemes() {
@@ -109,6 +109,9 @@ export function useMemeArchive() {
       remoteMemes.value = dedupeMemes(result.items)
       const remoteTexts = new Set(remoteMemes.value.map((meme) => normalizeMemeText(meme.text)))
       localMemes.value = localMemes.value.filter((meme) => !remoteTexts.has(normalizeMemeText(meme.text)))
+      if (!randomMeme.value || !allMemes.value.some((meme) => meme.id === randomMeme.value?.id)) {
+        randomMeme.value = remoteMemes.value.find((meme) => meme.featured) ?? allMemes.value[0] ?? null
+      }
       const serverCounts = Object.fromEntries(result.items.map((meme) => [meme.id, meme.copyCount ?? 0]))
       copyCounts.value = Object.fromEntries(
         Object.keys({ ...copyCounts.value, ...serverCounts }).map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),
@@ -186,6 +189,7 @@ export function useMemeArchive() {
   onMounted(async () => {
     const state = localMemeRepository.loadLocalState()
     localMemes.value = dedupeMemes(state.submissions)
+    randomMeme.value = localMemes.value[0] ?? null
     copyCounts.value = state.copyCounts
     likedIds.value = state.likedIds
     hydrated.value = true
