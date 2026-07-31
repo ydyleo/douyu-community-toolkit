@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.4.0
+// @version      0.4.1
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -29,7 +29,7 @@
   const CONFIG = {
     roomId: roomMatch[1],
     apiBase: GM_getValue('apiBase', 'http://127.0.0.1:4000').replace(/\/$/, ''),
-    cooldownMs: 10000,
+    cooldownMs: 3000,
   };
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
@@ -301,7 +301,7 @@
       cooldownUntil = Date.now() + CONFIG.cooldownMs;
       updateCooldown(button);
       void addCopyCount(item.id);
-      showStatus('已发送，10 秒后可以再次一键发送。');
+      showStatus('已发送，3 秒后可以再次一键发送。');
     }, 80);
   }
 

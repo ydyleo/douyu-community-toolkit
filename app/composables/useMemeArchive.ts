@@ -4,6 +4,31 @@ import type { Meme, MemeSubmissionReceipt } from '#shared/types/meme'
 
 export type SortMode = 'newest' | 'popular'
 
+function normalizeMemeText(text: string) {
+  return text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('zh-CN')
+}
+
+function dedupeMemes(memes: Meme[]) {
+  const seen = new Set<string>()
+  return memes.filter((meme) => {
+    const key = normalizeMemeText(meme.text)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function getResponseStatus(error: unknown) {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as {
+    status?: number
+    statusCode?: number
+    response?: { status?: number }
+    data?: { statusCode?: number }
+  }
+  return candidate.status ?? candidate.statusCode ?? candidate.response?.status ?? candidate.data?.statusCode
+}
+
 export function useMemeArchive() {
   const api = useApi()
   const selectedCategory = ref('全部')
@@ -19,7 +44,8 @@ export function useMemeArchive() {
   const hydrated = ref(false)
   const draft = ref({ text: '', category: categories[1]!, source: '', tags: '' })
 
-  const allMemes = computed(() => [...localMemes.value, ...remoteMemes.value])
+  // 正式数据放在前面：同一条梗既有本地暂存又已经公开时，只展示正式版本。
+  const allMemes = computed(() => dedupeMemes([...remoteMemes.value, ...localMemes.value]))
   const filteredMemes = computed(() => {
     const needle = query.value.trim().toLowerCase()
     const result = allMemes.value.filter((meme) => {
@@ -77,6 +103,11 @@ export function useMemeArchive() {
       flash('先写下这条梗')
       return
     }
+    const normalizedText = normalizeMemeText(text)
+    if (allMemes.value.some((meme) => normalizeMemeText(meme.text) === normalizedText)) {
+      flash('这条烂梗已经收录了')
+      return
+    }
 
     const submission = {
       text,
@@ -90,7 +121,11 @@ export function useMemeArchive() {
       draft.value = { text: '', category: categories[1]!, source: '', tags: '' }
       showSubmit.value = false
       flash('投稿成功，审核通过后会公开')
-    } catch {
+    } catch (error) {
+      if (getResponseStatus(error) === 409) {
+        flash('这条烂梗已收录或正在审核')
+        return
+      }
       const meme: Meme = {
         id: `local-${Date.now()}`,
         ...submission,
@@ -116,13 +151,15 @@ export function useMemeArchive() {
 
   onMounted(async () => {
     const state = localMemeRepository.loadLocalState()
-    localMemes.value = state.submissions
+    localMemes.value = dedupeMemes(state.submissions)
     copyCounts.value = state.copyCounts
     likedIds.value = state.likedIds
     hydrated.value = true
     try {
       const result = await api<{ items: Meme[] }>('/api/memes', { query: { pageSize: 100 } })
-      remoteMemes.value = result.items
+      remoteMemes.value = dedupeMemes(result.items)
+      const remoteTexts = new Set(remoteMemes.value.map((meme) => normalizeMemeText(meme.text)))
+      localMemes.value = localMemes.value.filter((meme) => !remoteTexts.has(normalizeMemeText(meme.text)))
       const serverCounts = Object.fromEntries(result.items.map((meme) => [meme.id, meme.copyCount ?? 0]))
       copyCounts.value = Object.fromEntries(
         Object.keys({ ...copyCounts.value, ...serverCounts }).map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),

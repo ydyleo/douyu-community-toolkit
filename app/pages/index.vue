@@ -330,7 +330,7 @@ onBeforeUnmount(clearMusicUnlock)
         <div class="helper-intro">
           <p class="eyebrow">直播间烂梗助手</p>
           <h2>把烂梗库<br />搬进直播间。</h2>
-          <p>打开任意斗鱼直播间都能使用。搜索烂梗后可以复制、填入弹幕框，或带 10 秒冷却地一键发送。</p>
+          <p>打开任意斗鱼直播间都能使用。搜索烂梗后可以复制、填入弹幕框，或带 3 秒冷却地一键发送。</p>
           <a class="primary-button" href="/userscripts/nishuixiaogui-meme-helper.user.js" target="_blank">安装小龟烂梗助手 <span>↗</span></a>
           <small>安装后打开任意斗鱼直播间，就会出现可自由拖动的“小龟烂梗”按钮。</small>
         </div>
