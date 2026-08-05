@@ -115,6 +115,12 @@ h1 span { color: var(--orange); }
 .like-button.liked { background: var(--orange); border-color: var(--orange); color: white; }
 .copy-button { min-width: 70px; padding: 0 12px; }
 .copy-button:hover { background: var(--blue); border-color: var(--blue); color: white; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 28px; }
+.pagination button { min-width: 108px; padding: 10px 15px; border: 1px solid var(--ink); background: var(--cream); color: var(--ink); font-weight: 700; cursor: pointer; }
+.pagination button:hover:not(:disabled) { background: var(--ink); color: white; }
+.pagination button:disabled { opacity: .35; cursor: not-allowed; }
+.pagination span { min-width: 94px; text-align: center; color: #6f685e; font: 600 12px ui-monospace, 'SFMono-Regular', monospace; }
+.pagination strong { color: var(--ink); }
 .empty-state { padding: 80px; border: 1px dashed var(--ink); text-align: center; }
 .empty-state strong { font-size: 24px; }
 .empty-state p { margin: 10px 0 0; color: #6f685e; }
@@ -217,6 +223,9 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .card-footer { align-items: flex-start; flex-direction: column; }
   .card-actions { width: 100%; }
   .copy-button { flex: 1; }
+  .pagination { gap: 8px; }
+  .pagination button { min-width: 0; flex: 1; padding-inline: 10px; }
+  .pagination span { min-width: 82px; }
   .form-row { grid-template-columns: 1fr; gap: 0; }
   .submit-panel { padding: 30px 22px; }
   footer { flex-direction: column; gap: 8px; }

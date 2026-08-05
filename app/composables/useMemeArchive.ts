@@ -8,6 +8,8 @@ import type { Meme, MemeSubmissionReceipt } from '#shared/types/meme'
 
 export type SortMode = 'newest' | 'popular'
 
+const MEMES_PER_PAGE = 6
+
 function normalizeMemeText(text: string) {
   return text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('zh-CN')
 }
@@ -38,6 +40,7 @@ export function useMemeArchive() {
   const selectedCategory = ref('全部')
   const query = ref('')
   const sortMode = ref<SortMode>('newest')
+  const currentPage = ref(1)
   const randomMeme = ref<Meme | null>(null)
   const copyCounts = ref<Record<string, number>>({})
   const likedIds = ref<string[]>([])
@@ -51,7 +54,7 @@ export function useMemeArchive() {
 
   // 正式数据放在前面：同一条梗既有本地暂存又已经公开时，只展示正式版本。
   const allMemes = computed(() => dedupeMemes([...remoteMemes.value, ...localMemes.value]))
-  const filteredMemes = computed(() => {
+  const matchingMemes = computed(() => {
     const needle = query.value.trim().toLowerCase()
     const result = allMemes.value.filter((meme) => {
       const inCategory = selectedCategory.value === '全部' || meme.category === selectedCategory.value
@@ -63,6 +66,9 @@ export function useMemeArchive() {
       ? [...result].sort((a, b) => (copyCounts.value[b.id] ?? 0) - (copyCounts.value[a.id] ?? 0))
       : result
   })
+  const totalPages = computed(() => Math.max(1, Math.ceil(matchingMemes.value.length / MEMES_PER_PAGE)))
+  const pageStart = computed(() => (currentPage.value - 1) * MEMES_PER_PAGE)
+  const filteredMemes = computed(() => matchingMemes.value.slice(pageStart.value, pageStart.value + MEMES_PER_PAGE))
   const totalCopies = computed(() => Object.values(copyCounts.value).reduce((sum, value) => sum + value, 0))
 
   function flash(message: string) {
@@ -97,22 +103,39 @@ export function useMemeArchive() {
   }
 
   function pickRandom() {
-    const pool = filteredMemes.value.length ? filteredMemes.value : allMemes.value
+    const pool = matchingMemes.value.length ? matchingMemes.value : allMemes.value
     const candidates = pool.filter((meme) => meme.id !== randomMeme.value?.id)
     randomMeme.value = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0] ?? null
+  }
+
+  function goToPage(page: number) {
+    currentPage.value = Math.min(totalPages.value, Math.max(1, page))
+    void nextTick(() => {
+      const grid = document.querySelector('#archive .meme-grid')
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      grid?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    })
   }
 
   function refreshRemoteMemes() {
     if (refreshPromise) return refreshPromise
     refreshPromise = (async () => {
-      const result = await api<{ items: Meme[] }>('/api/memes', { query: { pageSize: 100 } })
-      remoteMemes.value = dedupeMemes(result.items)
+      const items: Meme[] = []
+      let page = 1
+      let total = 0
+      do {
+        const result = await api<{ items: Meme[], total: number }>('/api/memes', { query: { page, pageSize: 100 } })
+        items.push(...result.items)
+        total = result.total
+        page += 1
+      } while (items.length < total)
+      remoteMemes.value = dedupeMemes(items)
       const remoteTexts = new Set(remoteMemes.value.map((meme) => normalizeMemeText(meme.text)))
       localMemes.value = localMemes.value.filter((meme) => !remoteTexts.has(normalizeMemeText(meme.text)))
       if (!randomMeme.value || !allMemes.value.some((meme) => meme.id === randomMeme.value?.id)) {
         randomMeme.value = remoteMemes.value.find((meme) => meme.featured) ?? allMemes.value[0] ?? null
       }
-      const serverCounts = Object.fromEntries(result.items.map((meme) => [meme.id, meme.copyCount ?? 0]))
+      const serverCounts = Object.fromEntries(items.map((meme) => [meme.id, meme.copyCount ?? 0]))
       copyCounts.value = Object.fromEntries(
         Object.keys({ ...copyCounts.value, ...serverCounts }).map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),
       )
@@ -174,6 +197,14 @@ export function useMemeArchive() {
     })
   }, { deep: true })
 
+  watch([query, selectedCategory, sortMode], () => {
+    currentPage.value = 1
+  })
+
+  watch(totalPages, (pages) => {
+    if (currentPage.value > pages) currentPage.value = pages
+  })
+
   function refreshWhenVisible() {
     if (document.visibilityState === 'visible') void refreshRemoteMemes()
   }
@@ -214,9 +245,12 @@ export function useMemeArchive() {
   return {
     allMemes,
     copyCounts,
+    currentPage,
     draft,
     filteredMemes,
+    goToPage,
     likedIds,
+    pageStart,
     pickRandom,
     query,
     randomMeme,
@@ -227,6 +261,7 @@ export function useMemeArchive() {
     toast,
     toggleLike,
     totalCopies,
+    totalPages,
     copyMeme,
   }
 }

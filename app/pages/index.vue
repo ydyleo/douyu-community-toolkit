@@ -13,9 +13,12 @@ const {
   allMemes,
   copyCounts,
   copyMeme,
+  currentPage,
   draft,
   filteredMemes,
+  goToPage,
   likedIds,
+  pageStart,
   pickRandom,
   query,
   randomMeme,
@@ -26,6 +29,7 @@ const {
   toast,
   toggleLike,
   totalCopies,
+  totalPages,
 } = useMemeArchive()
 
 const {
@@ -262,7 +266,7 @@ onBeforeUnmount(clearMusicUnlock)
 
         <div v-if="filteredMemes.length" class="meme-grid">
           <article v-for="(meme, index) in filteredMemes" :key="meme.id" class="meme-card">
-            <div class="card-number">{{ String(index + 1).padStart(2, '0') }}</div>
+            <div class="card-number">{{ String(pageStart + index + 1).padStart(2, '0') }}</div>
             <div class="card-body">
               <div class="tag-row">
                 <span class="category-tag">{{ meme.category }}</span>
@@ -286,7 +290,13 @@ onBeforeUnmount(clearMusicUnlock)
             </div>
           </article>
         </div>
-        <div v-else class="empty-state">
+        <nav v-if="totalPages > 1" class="pagination" aria-label="烂梗库分页">
+          <button type="button" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">← 上一页</button>
+          <span aria-live="polite">第 <strong>{{ currentPage }}</strong> / {{ totalPages }} 页
+          </span>
+          <button type="button" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">下一页 →</button>
+        </nav>
+        <div v-if="!filteredMemes.length" class="empty-state">
           <strong>这段记忆暂时空白</strong>
           <p>换个关键词，或者投递第一条相关烂梗。</p>
         </div>
