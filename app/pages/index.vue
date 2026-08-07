@@ -362,7 +362,10 @@ onBeforeUnmount(clearMusicUnlock)
 
     <footer>
       <span>溺水小龟 · 斗鱼 9765366 · Nuxt 4</span>
-      <span>水友共建 · 快乐补给</span>
+      <div class="footer-meta">
+        <span>水友共建 · 快乐补给</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2026111629号-1</a>
+      </div>
     </footer>
 
     <audio

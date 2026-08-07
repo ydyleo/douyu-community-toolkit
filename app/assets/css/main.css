@@ -159,6 +159,9 @@ h1 span { color: var(--orange); }
 .about-section > div { display: grid; grid-template-columns: 1fr .8fr; gap: 60px; align-items: end; }
 .about-section > div > p { margin: 0; line-height: 1.9; }
 footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: space-between; background: var(--ink); color: #d6d0c5; font-size: 12px; }
+.footer-meta { display: flex; gap: 18px; align-items: center; }
+.footer-meta a { color: inherit; text-underline-offset: 3px; }
+.footer-meta a:hover { color: white; }
 
 .music-player { width: min(390px, calc(100vw - 32px)); min-height: 82px; padding: 12px 42px 12px 12px; position: fixed; z-index: 45; right: 22px; bottom: 22px; display: grid; grid-template-columns: 58px minmax(0, 1fr) 38px; gap: 12px; align-items: center; background: rgba(255, 250, 240, .94); border: 1px solid var(--ink); box-shadow: 8px 8px 0 var(--orange); backdrop-filter: blur(10px); }
 .music-disc { width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid var(--ink); border-radius: 50%; background: repeating-radial-gradient(circle, #28231d 0 4px, #171410 5px 9px); color: var(--yellow); }
@@ -228,7 +231,7 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .pagination span { min-width: 82px; }
   .form-row { grid-template-columns: 1fr; gap: 0; }
   .submit-panel { padding: 30px 22px; }
-  footer { flex-direction: column; gap: 8px; }
+  footer, .footer-meta { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
