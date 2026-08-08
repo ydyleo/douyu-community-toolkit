@@ -60,6 +60,7 @@ const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
 const showOnlyUntagged = ref(false)
+const jokePage = ref(1)
 const jokeEditor = ref<JokeEditor | null>(null)
 const message = ref('')
 const error = ref('')
@@ -71,6 +72,19 @@ const passwordChange = ref({ currentPassword: '', newPassword: '', confirmPasswo
 const visibleJokes = computed(() => showOnlyUntagged.value
   ? jokes.value.filter((item) => !item.tags.length)
   : jokes.value)
+const jokePageSize = 10
+const jokeTotalPages = computed(() => Math.max(1, Math.ceil(visibleJokes.value.length / jokePageSize)))
+const paginatedJokes = computed(() => visibleJokes.value.slice((jokePage.value - 1) * jokePageSize, jokePage.value * jokePageSize))
+
+function toggleUntaggedFilter() {
+  showOnlyUntagged.value = !showOnlyUntagged.value
+  jokePage.value = 1
+}
+
+function goToJokePage(page: number) {
+  jokePage.value = Math.min(jokeTotalPages.value, Math.max(1, page))
+  void nextTick(() => document.querySelector('.admin-list-toolbar')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 
 function splitTags(value: string) {
   const result: string[] = []
@@ -561,7 +575,12 @@ async function deleteMedia(item: MediaAsset) {
 
 watch([activePanel, status], () => {
   clearFeedback()
+  if (activePanel.value === 'jokes') jokePage.value = 1
   void loadCurrentPanel()
+})
+
+watch(jokeTotalPages, (total) => {
+  jokePage.value = Math.min(jokePage.value, total)
 })
 
 onMounted(async () => {
@@ -705,13 +724,13 @@ onMounted(async () => {
         <section v-else-if="activePanel === 'jokes'">
           <div class="admin-list-toolbar">
             <span>共 {{ jokes.length }} 条，{{ jokes.filter(item => !item.tags.length).length }} 条暂无标签</span>
-            <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="showOnlyUntagged = !showOnlyUntagged">
+            <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="toggleUntaggedFilter">
               {{ showOnlyUntagged ? '显示全部' : '只看无标签' }}
             </button>
           </div>
           <div v-if="!visibleJokes.length" class="admin-state">{{ showOnlyUntagged ? '所有公开烂梗都已经有标签。' : '还没有公开烂梗。' }}</div>
           <div v-else class="admin-submission-list">
-            <article v-for="item in visibleJokes" :key="item.id" class="admin-submission-card">
+            <article v-for="item in paginatedJokes" :key="item.id" class="admin-submission-card">
               <div class="admin-submission-meta"><span class="category-tag">{{ item.category }}</span><span>{{ item.copyCount || 0 }} 次复制</span></div>
               <blockquote>{{ item.text }}</blockquote>
               <p>{{ item.source || '出处待考' }} · {{ item.featured ? '精选' : '普通' }}</p>
@@ -726,6 +745,11 @@ onMounted(async () => {
               </div>
             </article>
           </div>
+          <nav v-if="jokeTotalPages > 1" class="pagination" aria-label="后台烂梗分页">
+            <button type="button" :disabled="jokePage === 1" @click="goToJokePage(jokePage - 1)">← 上一页</button>
+            <span>第 <strong>{{ jokePage }}</strong> / {{ jokeTotalPages }} 页</span>
+            <button type="button" :disabled="jokePage === jokeTotalPages" @click="goToJokePage(jokePage + 1)">下一页 →</button>
+          </nav>
         </section>
 
         <section v-else-if="activePanel === 'sticker-review'">
@@ -829,11 +853,6 @@ onMounted(async () => {
             <button type="button" aria-label="关闭编辑窗口" @click="jokeEditor = null">×</button>
           </div>
           <form @submit.prevent="saveJokeEditor">
-            <label>梗内容<textarea v-model="jokeEditor.text" maxlength="240" rows="5" required /></label>
-            <div class="form-row">
-              <label>分类<select v-model="jokeEditor.category"><option v-for="item in categories.slice(1)" :key="item">{{ item }}</option></select></label>
-              <label>出处<input v-model="jokeEditor.source" maxlength="60" /></label>
-            </div>
             <label>标签<input v-model="jokeEditor.tags" maxlength="120" placeholder="用逗号分隔，最多 5 个；不用输入 #" /></label>
             <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
               <span>常用标签：</span>
@@ -844,6 +863,11 @@ onMounted(async () => {
                 :class="{ active: editorHasTag(tag.name) }"
                 @click="toggleEditorTag(tag.name)"
               >{{ tag.name }} · {{ tag.count }}</button>
+            </div>
+            <label>梗内容<textarea v-model="jokeEditor.text" maxlength="240" rows="3" required /></label>
+            <div class="form-row">
+              <label>分类<select v-model="jokeEditor.category"><option v-for="item in categories.slice(1)" :key="item">{{ item }}</option></select></label>
+              <label>出处<input v-model="jokeEditor.source" maxlength="60" /></label>
             </div>
             <label v-if="jokeEditor.kind === 'published'" class="admin-checkbox"><input v-model="jokeEditor.featured" type="checkbox" /> 设为精选</label>
             <div class="admin-editor-actions">
