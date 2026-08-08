@@ -984,9 +984,14 @@ onMounted(async () => {
             <span>共 {{ jokes.length }} 条，当前匹配 {{ visibleJokes.length }} 条，{{ jokes.filter(item => !item.tags.length).length }} 条暂无标签</span>
             <div class="admin-toolbar-actions">
               <input v-model="jokeAdminQuery" type="search" maxlength="60" placeholder="搜索梗内容、标签或出处" aria-label="搜索已有烂梗" />
-              <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="toggleUntaggedFilter">
-                {{ showOnlyUntagged ? '显示全部' : '只看无标签' }}
-              </button>
+              <label class="admin-filter-toggle" :class="{ active: showOnlyUntagged }">
+                <input type="checkbox" :checked="showOnlyUntagged" @change="toggleUntaggedFilter" />
+                <span class="admin-toggle-track" aria-hidden="true"><i /></span>
+                <span class="admin-toggle-copy">
+                  <strong>无标签</strong>
+                  <small>{{ jokes.filter(item => !item.tags.length).length }} 条内容</small>
+                </span>
+              </label>
             </div>
           </div>
           <div v-if="!visibleJokes.length" class="admin-state">{{ showOnlyUntagged ? '所有公开烂梗都已经有标签。' : '还没有公开烂梗。' }}</div>
@@ -1018,7 +1023,7 @@ onMounted(async () => {
             <span>共 {{ tagSuggestions.length }} 个标签，当前匹配 {{ managedTags.length }} 个。把一个标签拖到另一个标签上即可准备合并。</span>
             <div class="admin-toolbar-actions">
               <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
-              <label class="admin-duplicate-toggle" :class="{ active: showOnlySimilarTags }">
+              <label class="admin-filter-toggle" :class="{ active: showOnlySimilarTags }">
                 <input v-model="showOnlySimilarTags" type="checkbox" />
                 <span class="admin-toggle-track" aria-hidden="true"><i /></span>
                 <span class="admin-toggle-copy">
