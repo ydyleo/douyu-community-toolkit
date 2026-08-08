@@ -721,7 +721,7 @@ onMounted(async () => {
               </div>
               <div class="admin-review-actions">
                 <button class="ghost-button" type="button" @click="toggleFeatured(item)">{{ item.featured ? '取消精选' : '设为精选' }}</button>
-                <button class="ghost-button" type="button" @click="openJokeEditor(item, 'published')">编辑</button>
+                <button class="ghost-button" type="button" @click="openJokeEditor(item, 'published')">编辑内容与标签</button>
                 <button class="admin-reject-button" type="button" @click="deleteJoke(item)">删除</button>
               </div>
             </article>
