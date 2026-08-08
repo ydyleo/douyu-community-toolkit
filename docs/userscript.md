@@ -22,6 +22,7 @@
 ## 正式发布
 
 - `@downloadURL` 和 `@updateURL` 已指向 `https://9765366.cn/userscripts/nishuixiaogui-meme-helper.user.js`，版本号升级后 Tampermonkey 会自动检查更新。
+- 生产环境对 `/userscripts/` 禁用强缓存，确保 Tampermonkey 能及时读取新版本号。
 - `0.5.0` 起支持热门标签快捷筛选，并在结果中显示每条烂梗的标签。
 - `0.5.1` 修复结果提示挤压热门标签栏的问题；搜索、筛选和复制后标签栏会保持显示。
 - 生产镜像会把脚本默认服务地址构建为 `https://9765366.cn`，接口路径仍使用 `/api`；源码继续保留本地默认值，方便开发。
