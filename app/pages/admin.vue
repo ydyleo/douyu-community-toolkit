@@ -116,6 +116,7 @@ const managedTags = computed(() => {
     : tagSuggestions.value
   return showOnlySimilarTags.value ? items.filter((tag) => similarTagNames(tag.name).length) : items
 })
+const similarCandidateTagCount = computed(() => tagSuggestions.value.filter((tag) => similarTagNames(tag.name).length).length)
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -1017,9 +1018,14 @@ onMounted(async () => {
             <span>共 {{ tagSuggestions.length }} 个标签，当前匹配 {{ managedTags.length }} 个。把一个标签拖到另一个标签上即可准备合并。</span>
             <div class="admin-toolbar-actions">
               <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
-              <button class="ghost-button" type="button" :class="{ active: showOnlySimilarTags }" @click="showOnlySimilarTags = !showOnlySimilarTags">
-                {{ showOnlySimilarTags ? '显示全部标签' : '只看疑似重复' }}
-              </button>
+              <label class="admin-duplicate-toggle" :class="{ active: showOnlySimilarTags }">
+                <input v-model="showOnlySimilarTags" type="checkbox" />
+                <span class="admin-toggle-track" aria-hidden="true"><i /></span>
+                <span class="admin-toggle-copy">
+                  <strong>疑似重复</strong>
+                  <small>{{ similarCandidateTagCount }} 个候选</small>
+                </span>
+              </label>
             </div>
           </div>
           <div v-if="!managedTags.length" class="admin-state">没有找到匹配标签。</div>
@@ -1038,7 +1044,7 @@ onMounted(async () => {
             >
               <strong>#{{ tag.name }}</strong>
               <span>{{ tag.count }} 条烂梗</span>
-              <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">可能相似：{{ similarTagNames(tag.name).map(item => `#${item.name}`).join('、') }}</small>
+              <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
               <small v-else>拖到另一个标签上合并</small>
             </article>
           </div>
