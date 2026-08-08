@@ -17,6 +17,15 @@ useSeoMeta({
 })
 
 type Panel = 'joke-review' | 'jokes' | 'sticker-review' | 'stickers' | 'bgm' | 'security'
+type JokeEditor = {
+  kind: 'submission' | 'published'
+  id: string
+  text: string
+  category: string
+  source: string
+  tags: string
+  featured: boolean
+}
 
 const panelLabels: Record<Panel, string> = {
   'joke-review': '烂梗审核',
@@ -49,6 +58,9 @@ const jokes = ref<Meme[]>([])
 const mediaItems = ref<MediaAsset[]>([])
 const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
+const tagSuggestions = ref<{ name: string, count: number }[]>([])
+const showOnlyUntagged = ref(false)
+const jokeEditor = ref<JokeEditor | null>(null)
 const message = ref('')
 const error = ref('')
 const jokeDraft = ref({ text: '', category: categories[1]!, source: '', tags: '', featured: false })
@@ -56,6 +68,51 @@ const stickerUpload = ref({ title: '', description: '', file: null as File | nul
 const bgmUpload = ref({ title: '', artist: '', description: '', file: null as File | null })
 const newAdmin = ref({ username: '', password: '' })
 const passwordChange = ref({ currentPassword: '', newPassword: '', confirmPassword: '' })
+const visibleJokes = computed(() => showOnlyUntagged.value
+  ? jokes.value.filter((item) => !item.tags.length)
+  : jokes.value)
+
+function splitTags(value: string) {
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const raw of value.split(/[，,]/)) {
+    const cleaned = raw.trim().replace(/^#+\s*/, '').trim()
+    const tag = cleaned === '唱' ? '唱歌' : cleaned
+    const key = tag.toLocaleLowerCase('zh-CN')
+    if (!tag || seen.has(key)) continue
+    seen.add(key)
+    result.push(tag)
+    if (result.length >= 5) break
+  }
+  return result
+}
+
+function openJokeEditor(item: Meme | AdminJokeSubmission, kind: JokeEditor['kind']) {
+  jokeEditor.value = {
+    kind,
+    id: item.id,
+    text: item.text,
+    category: item.category,
+    source: item.source ?? '',
+    tags: item.tags.join(', '),
+    featured: kind === 'published' && 'featured' in item ? item.featured === true : false,
+  }
+}
+
+function toggleEditorTag(name: string) {
+  if (!jokeEditor.value) return
+  const tags = splitTags(jokeEditor.value.tags)
+  const index = tags.findIndex((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+  if (index >= 0) tags.splice(index, 1)
+  else if (tags.length < 5) tags.push(name)
+  jokeEditor.value.tags = tags.join(', ')
+}
+
+function editorHasTag(name: string) {
+  return jokeEditor.value
+    ? splitTags(jokeEditor.value.tags).some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+    : false
+}
 
 function readError(value: unknown) {
   const fetchError = value as { data?: { message?: string, statusMessage?: string }, message?: string, statusMessage?: string }
@@ -125,13 +182,19 @@ async function loadCurrentPanel() {
         auditLogs.value = logsResult.items
       }
     } else if (activePanel.value === 'joke-review') {
-      const result = await api<{ items: AdminJokeSubmission[] }>('/api/admin/submissions', {
-        query: { status: status.value },
-      })
+      const [result, tagsResult] = await Promise.all([
+        api<{ items: AdminJokeSubmission[] }>('/api/admin/submissions', { query: { status: status.value } }),
+        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } }),
+      ])
       jokeSubmissions.value = result.items
+      tagSuggestions.value = tagsResult.items
     } else if (activePanel.value === 'jokes') {
-      const result = await api<{ items: Meme[] }>('/api/admin/jokes')
+      const [result, tagsResult] = await Promise.all([
+        api<{ items: Meme[] }>('/api/admin/jokes'),
+        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } }),
+      ])
       jokes.value = result.items
+      tagSuggestions.value = tagsResult.items
     } else {
       const kind = activePanel.value === 'bgm' ? 'bgm' : 'sticker'
       const mediaStatus = activePanel.value === 'sticker-review' ? status.value : 'approved'
@@ -301,7 +364,7 @@ async function addJoke() {
         text: jokeDraft.value.text,
         category: jokeDraft.value.category,
         source: jokeDraft.value.source,
-        tags: jokeDraft.value.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean),
+        tags: splitTags(jokeDraft.value.tags),
         featured: jokeDraft.value.featured,
       },
     })
@@ -314,19 +377,27 @@ async function addJoke() {
   }
 }
 
-async function editJoke(item: Meme) {
-  const text = window.prompt('修改梗内容', item.text)
-  if (text === null) return
-  const source = window.prompt('修改出处', item.source ?? '')
-  if (source === null) return
+async function saveJokeEditor() {
+  if (!jokeEditor.value) return
+  const editor = jokeEditor.value
   clearFeedback()
   try {
-    await api(`/api/admin/jokes/${encodeURIComponent(item.id)}`, {
+    const path = editor.kind === 'submission'
+      ? `/api/admin/submissions/${encodeURIComponent(editor.id)}`
+      : `/api/admin/jokes/${encodeURIComponent(editor.id)}`
+    await api(path, {
       method: 'PATCH',
-      body: { text, source },
+      body: {
+        text: editor.text,
+        category: editor.category,
+        source: editor.source,
+        tags: splitTags(editor.tags),
+        ...(editor.kind === 'published' ? { featured: editor.featured } : {}),
+      },
     })
-    notifyMemeArchiveUpdated()
-    message.value = '烂梗已更新。'
+    if (editor.kind === 'published') notifyMemeArchiveUpdated()
+    jokeEditor.value = null
+    message.value = editor.kind === 'submission' ? '待审投稿已更新，可以继续审核。' : '烂梗已更新。'
     await loadCurrentPanel()
   } catch (caught) {
     error.value = readError(caught)
@@ -624,6 +695,7 @@ onMounted(async () => {
               </dl>
               <div v-if="item.status === 'pending'" class="admin-review-actions">
                 <button class="admin-reject-button" type="button" :disabled="processingId === item.id" @click="rejectJoke(item)">拒绝</button>
+                <button class="ghost-button" type="button" :disabled="processingId === item.id" @click="openJokeEditor(item, 'submission')">编辑内容与标签</button>
                 <button class="primary-button" type="button" :disabled="processingId === item.id" @click="approveJoke(item)">通过并公开</button>
               </div>
             </article>
@@ -631,15 +703,25 @@ onMounted(async () => {
         </section>
 
         <section v-else-if="activePanel === 'jokes'">
-          <div v-if="!jokes.length" class="admin-state">还没有公开烂梗。</div>
+          <div class="admin-list-toolbar">
+            <span>共 {{ jokes.length }} 条，{{ jokes.filter(item => !item.tags.length).length }} 条暂无标签</span>
+            <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="showOnlyUntagged = !showOnlyUntagged">
+              {{ showOnlyUntagged ? '显示全部' : '只看无标签' }}
+            </button>
+          </div>
+          <div v-if="!visibleJokes.length" class="admin-state">{{ showOnlyUntagged ? '所有公开烂梗都已经有标签。' : '还没有公开烂梗。' }}</div>
           <div v-else class="admin-submission-list">
-            <article v-for="item in jokes" :key="item.id" class="admin-submission-card">
+            <article v-for="item in visibleJokes" :key="item.id" class="admin-submission-card">
               <div class="admin-submission-meta"><span class="category-tag">{{ item.category }}</span><span>{{ item.copyCount || 0 }} 次复制</span></div>
               <blockquote>{{ item.text }}</blockquote>
               <p>{{ item.source || '出处待考' }} · {{ item.featured ? '精选' : '普通' }}</p>
+              <div class="admin-tag-list" :class="{ empty: !item.tags.length }">
+                <span v-if="!item.tags.length">暂无标签</span>
+                <span v-for="tag in item.tags" v-else :key="tag">#{{ tag }}</span>
+              </div>
               <div class="admin-review-actions">
                 <button class="ghost-button" type="button" @click="toggleFeatured(item)">{{ item.featured ? '取消精选' : '设为精选' }}</button>
-                <button class="ghost-button" type="button" @click="editJoke(item)">编辑</button>
+                <button class="ghost-button" type="button" @click="openJokeEditor(item, 'published')">编辑</button>
                 <button class="admin-reject-button" type="button" @click="deleteJoke(item)">删除</button>
               </div>
             </article>
@@ -736,6 +818,41 @@ onMounted(async () => {
           </div>
         </section>
       </template>
+
+      <div v-if="jokeEditor" class="admin-editor-backdrop" @click.self="jokeEditor = null">
+        <section class="admin-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="joke-editor-title">
+          <div class="admin-editor-title">
+            <div>
+              <p class="eyebrow">{{ jokeEditor.kind === 'submission' ? '投稿审核' : '烂梗管理' }}</p>
+              <h2 id="joke-editor-title">编辑烂梗</h2>
+            </div>
+            <button type="button" aria-label="关闭编辑窗口" @click="jokeEditor = null">×</button>
+          </div>
+          <form @submit.prevent="saveJokeEditor">
+            <label>梗内容<textarea v-model="jokeEditor.text" maxlength="240" rows="5" required /></label>
+            <div class="form-row">
+              <label>分类<select v-model="jokeEditor.category"><option v-for="item in categories.slice(1)" :key="item">{{ item }}</option></select></label>
+              <label>出处<input v-model="jokeEditor.source" maxlength="60" /></label>
+            </div>
+            <label>标签<input v-model="jokeEditor.tags" maxlength="120" placeholder="用逗号分隔，最多 5 个；不用输入 #" /></label>
+            <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
+              <span>常用标签：</span>
+              <button
+                v-for="tag in tagSuggestions"
+                :key="tag.name"
+                type="button"
+                :class="{ active: editorHasTag(tag.name) }"
+                @click="toggleEditorTag(tag.name)"
+              >{{ tag.name }} · {{ tag.count }}</button>
+            </div>
+            <label v-if="jokeEditor.kind === 'published'" class="admin-checkbox"><input v-model="jokeEditor.featured" type="checkbox" /> 设为精选</label>
+            <div class="admin-editor-actions">
+              <button class="ghost-button" type="button" @click="jokeEditor = null">取消</button>
+              <button class="primary-button" type="submit">保存修改</button>
+            </div>
+          </form>
+        </section>
+      </div>
     </main>
   </div>
 </template>

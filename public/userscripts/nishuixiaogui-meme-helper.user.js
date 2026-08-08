@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.4.2
+// @version      0.5.0
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -132,15 +132,18 @@
   searchButton.type = 'button';
   searchRow.append(searchInput, searchButton);
 
+  const quickTags = make('div', 'xg-quick-tags');
+
   const status = make('p', 'xg-status', '输入关键词，从小龟烂梗库搜索。');
   const results = make('div', 'xg-results');
-  panel.append(header, searchRow, status, results);
+  panel.append(header, searchRow, quickTags, status, results);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
   let cooldownTimer = 0;
   let pageHidden = false;
   let suppressLauncherClick = false;
+  let activeTag = '';
 
   function defaultLauncherPosition() {
     return {
@@ -318,7 +321,8 @@
       copyButton.title = '点击复制';
       copyButton.addEventListener('click', function () { void copyText(item); });
       const meta = make('div', 'xg-meta');
-      meta.append(make('span', '', '#' + item.category), make('span', '', '复制 ' + (item.copyCount || 0)));
+      const tagText = (item.tags || []).slice(0, 3).map(function (tag) { return '#' + tag; }).join(' ');
+      meta.append(make('span', '', '#' + item.category + (tagText ? ' · ' + tagText : '')), make('span', '', '复制 ' + (item.copyCount || 0)));
       const actions = make('div', 'xg-actions');
       const fillButton = make('button', 'xg-fill', '填入');
       const sendButton = make('button', 'xg-send', '发送');
@@ -337,14 +341,47 @@
     searchButton.disabled = true;
     showStatus(query ? '正在搜索“' + query + '”……' : '正在加载热门烂梗……');
     try {
-      const data = await request('GET', '/api/memes?sort=popular&pageSize=50&query=' + encodeURIComponent(query));
+      const data = await request('GET', '/api/memes?sort=popular&pageSize=50&query=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(activeTag));
       render(data.items || []);
-      showStatus('找到 ' + (data.total || 0) + ' 条，点文字复制，也可以填入或发送。');
+      showStatus('找到 ' + (data.total || 0) + ' 条' + (activeTag ? ' #' + activeTag : '') + '，点文字复制，也可以填入或发送。');
     } catch (error) {
       console.error('[小龟烂梗助手] 搜索失败', error);
       showStatus('暂时连接不到烂梗库，请稍后再试，或在油猴菜单中检查服务地址。', true);
     } finally {
       searchButton.disabled = false;
+    }
+  }
+
+  function renderQuickTags(items) {
+    quickTags.innerHTML = '';
+    const allButton = make('button', activeTag ? '' : 'is-active', '全部');
+    allButton.type = 'button';
+    allButton.addEventListener('click', function () {
+      activeTag = '';
+      renderQuickTags(items);
+      void search();
+    });
+    quickTags.append(allButton);
+    items.forEach(function (item) {
+      const button = make('button', activeTag === item.name ? 'is-active' : '', '#' + item.name);
+      button.type = 'button';
+      button.title = item.count + ' 条烂梗';
+      button.addEventListener('click', function () {
+        activeTag = activeTag === item.name ? '' : item.name;
+        renderQuickTags(items);
+        void search();
+      });
+      quickTags.append(button);
+    });
+  }
+
+  async function loadQuickTags() {
+    try {
+      const data = await request('GET', '/api/tags?limit=10');
+      renderQuickTags(data.items || []);
+    } catch (error) {
+      console.error('[小龟烂梗助手] 标签加载失败', error);
+      renderQuickTags([]);
     }
   }
 
@@ -354,6 +391,7 @@
     if (panel.classList.contains('is-open')) {
       window.requestAnimationFrame(function () {
         applyPanelPosition();
+        void loadQuickTags();
         void search();
       });
     }
@@ -397,11 +435,14 @@
     '.xg-search{display:flex;gap:8px;padding:12px;border-bottom:1px solid rgba(23,20,16,.18)}',
     '.xg-search input{min-width:0;flex:1;border:1px solid #171410;padding:9px 10px;background:white;color:#171410}',
     '.xg-search button{border:1px solid #171410;padding:8px 13px;background:#171410;color:white;cursor:pointer}',
+    '.xg-quick-tags{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
+    '.xg-quick-tags button{flex:0 0 auto;border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:#fffaf0;color:#171410;font-size:10px;cursor:pointer}',
+    '.xg-quick-tags button.is-active{border-color:#171410;background:#171410;color:white}',
     '.xg-status{margin:0;padding:9px 13px;color:#625b52;background:#f4efe5;font-size:11px}.xg-status.is-error{color:#b3261e}',
     '.xg-results{overflow:auto;padding:10px;display:grid;gap:9px}',
     '.xg-card{padding:11px;border:1px solid rgba(23,20,16,.25);background:white}',
     '.xg-meme-text{width:100%;padding:0;border:0;background:transparent;color:#171410;text-align:left;font-size:15px;font-weight:700;line-height:1.55;cursor:pointer}',
-    '.xg-meta{display:flex;justify-content:space-between;margin-top:8px;color:#746c61;font-size:10px}',
+    '.xg-meta{display:flex;justify-content:space-between;gap:10px;margin-top:8px;color:#746c61;font-size:10px}.xg-meta span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.xg-actions{display:flex;gap:7px;margin-top:10px}.xg-actions button{flex:1;border:1px solid #171410;padding:7px;cursor:pointer}',
     '.xg-fill{background:#fffaf0;color:#171410}.xg-send{background:#3667e9;color:white}.xg-send:disabled{opacity:.55}',
     '.xg-empty{padding:40px 15px;text-align:center;color:#746c61}',

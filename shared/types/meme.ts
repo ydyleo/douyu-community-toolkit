@@ -30,6 +30,7 @@ export type AdminJokeSubmission = MemeSubmission & {
 export type MemeListQuery = {
   query?: string
   category?: string
+  tag?: string
   sort?: 'newest' | 'popular'
   page?: number
   pageSize?: number
