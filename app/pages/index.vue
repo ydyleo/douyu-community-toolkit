@@ -40,6 +40,7 @@ const {
   stickers,
   submitSticker,
 } = useMediaLibrary()
+const api = useApi()
 const audioPlayer = ref<HTMLAudioElement | null>(null)
 const selectedTrackIndex = ref(0)
 const musicPanelOpen = ref(true)
@@ -49,6 +50,35 @@ const autoplayBlocked = ref(false)
 const currentTrack = computed(() => bgmTracks.value[selectedTrackIndex.value] ?? bgmTracks.value[0])
 const showStickerSubmit = ref(false)
 const stickerDraft = ref({ title: '', description: '', submitterName: '', file: null as File | null })
+const submissionTagOptions = ref<{ name: string, count: number }[]>([])
+const suggestedTag = ref('')
+
+function selectedSubmissionTags() {
+  return draft.value.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean)
+}
+
+function submissionHasTag(name: string) {
+  return selectedSubmissionTags().some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+}
+
+function toggleSubmissionTag(name: string) {
+  const tags = selectedSubmissionTags()
+  const index = tags.findIndex((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+  if (index >= 0) tags.splice(index, 1)
+  else if (tags.length < 5) tags.push(name)
+  draft.value.tags = tags.join(', ')
+}
+
+async function submitMemeDraft() {
+  const tags = selectedSubmissionTags()
+  const suggestion = suggestedTag.value.trim().replace(/^#+\s*/, '').trim()
+  if (suggestion && !tags.some((tag) => tag.toLocaleLowerCase('zh-CN') === suggestion.toLocaleLowerCase('zh-CN'))) {
+    tags.push(suggestion)
+  }
+  draft.value.tags = tags.slice(0, 5).join(', ')
+  await submitMeme()
+  if (!showSubmit.value) suggestedTag.value = ''
+}
 
 let unlockMusic: (() => void) | null = null
 
@@ -161,6 +191,9 @@ async function submitStickerDraft() {
 onMounted(() => {
   musicEnabled.value = localStorage.getItem('xiaogui-bgm') !== 'off'
   if (musicEnabled.value) void playMusic()
+  void api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } })
+    .then((result) => { submissionTagOptions.value = result.items })
+    .catch(() => { submissionTagOptions.value = [] })
 })
 
 onBeforeUnmount(clearMusicUnlock)
@@ -395,7 +428,7 @@ onBeforeUnmount(clearMusicUnlock)
     <button v-else-if="currentTrack" class="music-reopen" type="button" aria-label="打开背景音乐" @click="reopenMusicPanel">♫</button>
 
     <div v-if="showSubmit" class="modal-backdrop" @click.self="showSubmit = false">
-      <form class="submit-panel" @submit.prevent="submitMeme">
+      <form class="submit-panel" @submit.prevent="submitMemeDraft">
         <button class="close-button" type="button" aria-label="关闭" @click="showSubmit = false">×</button>
         <p class="eyebrow">水友投稿</p>
         <h2>投递一条烂梗</h2>
@@ -416,9 +449,22 @@ onBeforeUnmount(clearMusicUnlock)
             <input v-model="draft.source" maxlength="60" placeholder="日期 / 切片 / 场次" />
           </label>
         </div>
+        <fieldset class="submission-tag-fieldset">
+          <legend>选择已有标签 <span>可多选，最多 5 个</span></legend>
+          <div v-if="submissionTagOptions.length" class="submission-tag-options">
+            <button
+              v-for="tag in submissionTagOptions"
+              :key="tag.name"
+              type="button"
+              :class="{ active: submissionHasTag(tag.name) }"
+              @click="toggleSubmissionTag(tag.name)"
+            >#{{ tag.name }} <small>{{ tag.count }}</small></button>
+          </div>
+          <p v-else class="form-hint">暂时没有可选标签，可以在下面建议一个新标签。</p>
+        </fieldset>
         <label>
-          标签
-          <input v-model="draft.tags" maxlength="80" placeholder="口头禅, 名场面（最多 5 个）" />
+          建议新标签 <span class="optional-field">可选，审核时由管理员统一</span>
+          <input v-model="suggestedTag" maxlength="24" placeholder="找不到合适标签时填写，不用输入 #" />
         </label>
         <button class="primary-button submit-button" type="submit">提交审核</button>
       </form>
