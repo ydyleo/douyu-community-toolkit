@@ -310,6 +310,14 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-tag-suggestions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; background: white; cursor: pointer; font-size: 11px; }
 .admin-tag-suggestions button.active { border-color: var(--ink); background: var(--ink); color: white; }
 .admin-tag-suggestions button.tag-expand-button { border-style: dashed; background: #fffaf0; color: var(--ink); }
+.admin-tag-fieldset { display: grid; gap: 10px; margin: 0; padding: 13px; border: 1px solid var(--ink); }
+.admin-tag-fieldset legend { padding: 0 6px; font-size: 12px; font-weight: 800; }
+.admin-tag-fieldset legend span, .admin-tag-fieldset > small { color: #625a69; font-size: 11px; font-weight: 500; }
+.admin-tag-empty { margin: 0; color: #756e78; font-size: 12px; }
+.admin-selected-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+.admin-selected-tags button { padding: 6px 9px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: white; cursor: pointer; font-size: 11px; }
+.admin-new-tag-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.admin-new-tag-row button { padding: 0 16px; border: 1px solid var(--ink); background: var(--yellow); color: var(--ink); cursor: pointer; font-weight: 800; }
 .admin-editor-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .admin-reject-button { padding: 12px 22px; border: 1px solid var(--ink); background: transparent; cursor: pointer; }
 .admin-reject-button:hover { background: var(--orange); color: white; }

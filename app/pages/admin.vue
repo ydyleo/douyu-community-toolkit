@@ -60,9 +60,12 @@ const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
 const showAllEditorTags = ref(false)
+const showAllDraftTags = ref(false)
 const showOnlyUntagged = ref(false)
 const jokePage = ref(1)
 const jokeEditor = ref<JokeEditor | null>(null)
+const newEditorTag = ref('')
+const newDraftTag = ref('')
 const message = ref('')
 const error = ref('')
 const jokeDraft = ref({ text: '', category: categories[1]!, source: '', tags: '', featured: false })
@@ -79,6 +82,11 @@ const paginatedJokes = computed(() => visibleJokes.value.slice((jokePage.value -
 const visibleEditorTagSuggestions = computed(() => showAllEditorTags.value
   ? tagSuggestions.value
   : tagSuggestions.value.slice(0, 10))
+const visibleDraftTagSuggestions = computed(() => showAllDraftTags.value
+  ? tagSuggestions.value
+  : tagSuggestions.value.slice(0, 10))
+const editorSelectedTags = computed(() => jokeEditor.value ? splitTags(jokeEditor.value.tags) : [])
+const draftSelectedTags = computed(() => splitTags(jokeDraft.value.tags))
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -107,6 +115,7 @@ function splitTags(value: string) {
 
 function openJokeEditor(item: Meme | AdminJokeSubmission, kind: JokeEditor['kind']) {
   showAllEditorTags.value = false
+  newEditorTag.value = ''
   jokeEditor.value = {
     kind,
     id: item.id,
@@ -131,6 +140,33 @@ function editorHasTag(name: string) {
   return jokeEditor.value
     ? splitTags(jokeEditor.value.tags).some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
     : false
+}
+
+function toggleDraftTag(name: string) {
+  const tags = splitTags(jokeDraft.value.tags)
+  const index = tags.findIndex((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+  if (index >= 0) tags.splice(index, 1)
+  else if (tags.length < 5) tags.push(name)
+  jokeDraft.value.tags = tags.join(', ')
+}
+
+function draftHasTag(name: string) {
+  return splitTags(jokeDraft.value.tags).some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
+}
+
+function appendTags(current: string, additions: string) {
+  return splitTags(`${current},${additions}`).join(', ')
+}
+
+function addDraftTag() {
+  jokeDraft.value.tags = appendTags(jokeDraft.value.tags, newDraftTag.value)
+  newDraftTag.value = ''
+}
+
+function addEditorTag() {
+  if (!jokeEditor.value) return
+  jokeEditor.value.tags = appendTags(jokeEditor.value.tags, newEditorTag.value)
+  newEditorTag.value = ''
 }
 
 function readError(value: unknown) {
@@ -375,6 +411,7 @@ async function rejectJoke(item: AdminJokeSubmission) {
 }
 
 async function addJoke() {
+  addDraftTag()
   clearFeedback()
   try {
     await api('/api/admin/jokes', {
@@ -389,6 +426,7 @@ async function addJoke() {
     })
     notifyMemeArchiveUpdated()
     jokeDraft.value = { text: '', category: categories[1]!, source: '', tags: '', featured: false }
+    newDraftTag.value = ''
     message.value = '烂梗已直接加入公开列表。'
     await loadCurrentPanel()
   } catch (caught) {
@@ -398,6 +436,7 @@ async function addJoke() {
 
 async function saveJokeEditor() {
   if (!jokeEditor.value) return
+  addEditorTag()
   const editor = jokeEditor.value
   clearFeedback()
   try {
@@ -675,7 +714,34 @@ onMounted(async () => {
               <label>分类<select v-model="jokeDraft.category"><option v-for="item in categories.slice(1)" :key="item">{{ item }}</option></select></label>
               <label>出处<input v-model="jokeDraft.source" maxlength="60" /></label>
             </div>
-            <label>标签<input v-model="jokeDraft.tags" maxlength="80" placeholder="用逗号分隔" /></label>
+            <fieldset class="admin-tag-fieldset">
+              <legend>标签 <span>可多选，最多 5 个</span></legend>
+              <div v-if="draftSelectedTags.length" class="admin-selected-tags">
+                <button v-for="tag in draftSelectedTags" :key="tag" type="button" @click="toggleDraftTag(tag)">#{{ tag }} ×</button>
+              </div>
+              <p v-else class="admin-tag-empty">暂未选择标签</p>
+              <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
+                <span>选择已有：</span>
+                <button
+                  v-for="tag in visibleDraftTagSuggestions"
+                  :key="tag.name"
+                  type="button"
+                  :class="{ active: draftHasTag(tag.name) }"
+                  @click="toggleDraftTag(tag.name)"
+                >{{ tag.name }} · {{ tag.count }}</button>
+                <button
+                  v-if="tagSuggestions.length > 10"
+                  type="button"
+                  class="tag-expand-button"
+                  @click="showAllDraftTags = !showAllDraftTags"
+                >{{ showAllDraftTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
+              </div>
+              <div class="admin-new-tag-row">
+                <input v-model="newDraftTag" maxlength="80" placeholder="输入新标签" @keydown.enter.prevent="addDraftTag" />
+                <button type="button" @click="addDraftTag">添加</button>
+              </div>
+              <small>输入后按回车或点击添加；重复标签会自动合并。</small>
+            </fieldset>
             <label class="admin-checkbox"><input v-model="jokeDraft.featured" type="checkbox" /> 设为精选</label>
             <button class="primary-button" type="submit">添加并公开</button>
           </form>
@@ -858,23 +924,34 @@ onMounted(async () => {
             <button type="button" aria-label="关闭编辑窗口" @click="jokeEditor = null">×</button>
           </div>
           <form @submit.prevent="saveJokeEditor">
-            <label>标签<input v-model="jokeEditor.tags" maxlength="120" placeholder="用逗号分隔，最多 5 个；不用输入 #" /></label>
-            <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
-              <span>常用标签：</span>
-              <button
-                v-for="tag in visibleEditorTagSuggestions"
-                :key="tag.name"
-                type="button"
-                :class="{ active: editorHasTag(tag.name) }"
-                @click="toggleEditorTag(tag.name)"
-              >{{ tag.name }} · {{ tag.count }}</button>
-              <button
-                v-if="tagSuggestions.length > 10"
-                type="button"
-                class="tag-expand-button"
-                @click="showAllEditorTags = !showAllEditorTags"
-              >{{ showAllEditorTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
-            </div>
+            <fieldset class="admin-tag-fieldset">
+              <legend>标签 <span>可多选，最多 5 个</span></legend>
+              <div v-if="editorSelectedTags.length" class="admin-selected-tags">
+                <button v-for="tag in editorSelectedTags" :key="tag" type="button" @click="toggleEditorTag(tag)">#{{ tag }} ×</button>
+              </div>
+              <p v-else class="admin-tag-empty">暂未选择标签</p>
+              <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
+                <span>选择已有：</span>
+                <button
+                  v-for="tag in visibleEditorTagSuggestions"
+                  :key="tag.name"
+                  type="button"
+                  :class="{ active: editorHasTag(tag.name) }"
+                  @click="toggleEditorTag(tag.name)"
+                >{{ tag.name }} · {{ tag.count }}</button>
+                <button
+                  v-if="tagSuggestions.length > 10"
+                  type="button"
+                  class="tag-expand-button"
+                  @click="showAllEditorTags = !showAllEditorTags"
+                >{{ showAllEditorTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
+              </div>
+              <div class="admin-new-tag-row">
+                <input v-model="newEditorTag" maxlength="80" placeholder="输入新标签" @keydown.enter.prevent="addEditorTag" />
+                <button type="button" @click="addEditorTag">添加</button>
+              </div>
+              <small>输入后按回车或点击添加；重复标签会自动合并。</small>
+            </fieldset>
             <label>梗内容<textarea v-model="jokeEditor.text" maxlength="240" rows="3" required /></label>
             <div class="form-row">
               <label>分类<select v-model="jokeEditor.category"><option v-for="item in categories.slice(1)" :key="item">{{ item }}</option></select></label>
