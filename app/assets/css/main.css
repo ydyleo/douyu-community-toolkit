@@ -188,6 +188,8 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .submission-tag-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .submission-tag-options button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--cream); color: var(--ink); cursor: pointer; font-size: 12px; }
 .submission-tag-options button:hover, .submission-tag-options button.active { border-color: var(--ink); background: var(--ink); color: white; }
+.submission-tag-options button.tag-expand-button { border-style: dashed; background: white; color: var(--ink); }
+.submission-tag-options button.tag-expand-button:hover { border-color: var(--ink); background: var(--cream); color: var(--ink); }
 .submission-tag-options small { margin-left: 3px; opacity: .65; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .submit-button { width: 100%; margin-top: 24px; }
@@ -307,6 +309,7 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-tag-suggestions > span { margin-right: 3px; color: #625a69; font-size: 11px; }
 .admin-tag-suggestions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; background: white; cursor: pointer; font-size: 11px; }
 .admin-tag-suggestions button.active { border-color: var(--ink); background: var(--ink); color: white; }
+.admin-tag-suggestions button.tag-expand-button { border-style: dashed; background: #fffaf0; color: var(--ink); }
 .admin-editor-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .admin-reject-button { padding: 12px 22px; border: 1px solid var(--ink); background: transparent; cursor: pointer; }
 .admin-reject-button:hover { background: var(--orange); color: white; }

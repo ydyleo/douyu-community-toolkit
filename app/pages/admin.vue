@@ -59,6 +59,7 @@ const mediaItems = ref<MediaAsset[]>([])
 const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
+const showAllEditorTags = ref(false)
 const showOnlyUntagged = ref(false)
 const jokePage = ref(1)
 const jokeEditor = ref<JokeEditor | null>(null)
@@ -75,6 +76,9 @@ const visibleJokes = computed(() => showOnlyUntagged.value
 const jokePageSize = 10
 const jokeTotalPages = computed(() => Math.max(1, Math.ceil(visibleJokes.value.length / jokePageSize)))
 const paginatedJokes = computed(() => visibleJokes.value.slice((jokePage.value - 1) * jokePageSize, jokePage.value * jokePageSize))
+const visibleEditorTagSuggestions = computed(() => showAllEditorTags.value
+  ? tagSuggestions.value
+  : tagSuggestions.value.slice(0, 10))
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -102,6 +106,7 @@ function splitTags(value: string) {
 }
 
 function openJokeEditor(item: Meme | AdminJokeSubmission, kind: JokeEditor['kind']) {
+  showAllEditorTags.value = false
   jokeEditor.value = {
     kind,
     id: item.id,
@@ -198,14 +203,14 @@ async function loadCurrentPanel() {
     } else if (activePanel.value === 'joke-review') {
       const [result, tagsResult] = await Promise.all([
         api<{ items: AdminJokeSubmission[] }>('/api/admin/submissions', { query: { status: status.value } }),
-        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } }),
+        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } }),
       ])
       jokeSubmissions.value = result.items
       tagSuggestions.value = tagsResult.items
     } else if (activePanel.value === 'jokes') {
       const [result, tagsResult] = await Promise.all([
         api<{ items: Meme[] }>('/api/admin/jokes'),
-        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } }),
+        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } }),
       ])
       jokes.value = result.items
       tagSuggestions.value = tagsResult.items
@@ -857,12 +862,18 @@ onMounted(async () => {
             <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
               <span>常用标签：</span>
               <button
-                v-for="tag in tagSuggestions"
+                v-for="tag in visibleEditorTagSuggestions"
                 :key="tag.name"
                 type="button"
                 :class="{ active: editorHasTag(tag.name) }"
                 @click="toggleEditorTag(tag.name)"
               >{{ tag.name }} · {{ tag.count }}</button>
+              <button
+                v-if="tagSuggestions.length > 10"
+                type="button"
+                class="tag-expand-button"
+                @click="showAllEditorTags = !showAllEditorTags"
+              >{{ showAllEditorTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
             </div>
             <label>梗内容<textarea v-model="jokeEditor.text" maxlength="240" rows="3" required /></label>
             <div class="form-row">

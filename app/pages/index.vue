@@ -51,7 +51,11 @@ const currentTrack = computed(() => bgmTracks.value[selectedTrackIndex.value] ??
 const showStickerSubmit = ref(false)
 const stickerDraft = ref({ title: '', description: '', submitterName: '', file: null as File | null })
 const submissionTagOptions = ref<{ name: string, count: number }[]>([])
+const showAllSubmissionTags = ref(false)
 const suggestedTag = ref('')
+const visibleSubmissionTagOptions = computed(() => showAllSubmissionTags.value
+  ? submissionTagOptions.value
+  : submissionTagOptions.value.slice(0, 10))
 
 function selectedSubmissionTags() {
   return draft.value.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean)
@@ -191,7 +195,7 @@ async function submitStickerDraft() {
 onMounted(() => {
   musicEnabled.value = localStorage.getItem('xiaogui-bgm') !== 'off'
   if (musicEnabled.value) void playMusic()
-  void api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 20 } })
+  void api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } })
     .then((result) => { submissionTagOptions.value = result.items })
     .catch(() => { submissionTagOptions.value = [] })
 })
@@ -453,12 +457,18 @@ onBeforeUnmount(clearMusicUnlock)
           <legend>选择已有标签 <span>可多选，最多 5 个</span></legend>
           <div v-if="submissionTagOptions.length" class="submission-tag-options">
             <button
-              v-for="tag in submissionTagOptions"
+              v-for="tag in visibleSubmissionTagOptions"
               :key="tag.name"
               type="button"
               :class="{ active: submissionHasTag(tag.name) }"
               @click="toggleSubmissionTag(tag.name)"
             >#{{ tag.name }} <small>{{ tag.count }}</small></button>
+            <button
+              v-if="submissionTagOptions.length > 10"
+              type="button"
+              class="tag-expand-button"
+              @click="showAllSubmissionTags = !showAllSubmissionTags"
+            >{{ showAllSubmissionTags ? '收起' : `全部 ${submissionTagOptions.length}` }}</button>
           </div>
           <p v-else class="form-hint">暂时没有可选标签，可以在下面建议一个新标签。</p>
         </fieldset>
