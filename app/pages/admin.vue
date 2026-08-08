@@ -26,6 +26,15 @@ type JokeEditor = {
   tags: string
   featured: boolean
 }
+type SimilarJoke = Meme & { score: number, reasons: string[] }
+type SimilarTagGroup = { inputTag: string, items: { name: string, count: number, score: number }[] }
+type SubmissionSimilarityState = {
+  loading: boolean
+  loaded: boolean
+  error: string
+  matches: SimilarJoke[]
+  tagMatches: SimilarTagGroup[]
+}
 
 const panelLabels: Record<Panel, string> = {
   'joke-review': '烂梗审核',
@@ -61,6 +70,9 @@ const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
 const tagAdminQuery = ref('')
+const jokeAdminQuery = ref('')
+const showOnlySimilarTags = ref(false)
+const submissionSimilarities = ref<Record<string, SubmissionSimilarityState>>({})
 const draggedTag = ref('')
 const tagDropTarget = ref('')
 const tagMerge = ref<{ source: string, target: string, name: string } | null>(null)
@@ -79,9 +91,13 @@ const stickerUpload = ref({ title: '', description: '', file: null as File | nul
 const bgmUpload = ref({ title: '', artist: '', description: '', file: null as File | null })
 const newAdmin = ref({ username: '', password: '' })
 const passwordChange = ref({ currentPassword: '', newPassword: '', confirmPassword: '' })
-const visibleJokes = computed(() => showOnlyUntagged.value
-  ? jokes.value.filter((item) => !item.tags.length)
-  : jokes.value)
+const visibleJokes = computed(() => {
+  const query = jokeAdminQuery.value.trim().toLocaleLowerCase('zh-CN')
+  const items = showOnlyUntagged.value ? jokes.value.filter((item) => !item.tags.length) : jokes.value
+  return query
+    ? items.filter((item) => [item.text, item.category, item.source ?? '', ...item.tags].join(' ').toLocaleLowerCase('zh-CN').includes(query))
+    : items
+})
 const jokePageSize = 10
 const jokeTotalPages = computed(() => Math.max(1, Math.ceil(visibleJokes.value.length / jokePageSize)))
 const paginatedJokes = computed(() => visibleJokes.value.slice((jokePage.value - 1) * jokePageSize, jokePage.value * jokePageSize))
@@ -95,9 +111,10 @@ const editorSelectedTags = computed(() => jokeEditor.value ? splitTags(jokeEdito
 const draftSelectedTags = computed(() => splitTags(jokeDraft.value.tags))
 const managedTags = computed(() => {
   const query = tagAdminQuery.value.trim().toLocaleLowerCase('zh-CN')
-  return query
+  const items = query
     ? tagSuggestions.value.filter((tag) => tag.name.toLocaleLowerCase('zh-CN').includes(query))
     : tagSuggestions.value
+  return showOnlySimilarTags.value ? items.filter((tag) => similarTagNames(tag.name).length) : items
 })
 
 function toggleUntaggedFilter() {
@@ -205,6 +222,69 @@ function tagUsageCount(name: string) {
   return tagSuggestions.value.find((tag) => tag.name === name)?.count ?? 0
 }
 
+function comparableTag(value: string) {
+  return value.toLocaleLowerCase('zh-CN').replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+function tagNameSimilarity(leftValue: string, rightValue: string) {
+  const left = comparableTag(leftValue)
+  const right = comparableTag(rightValue)
+  if (!left || !right) return 0
+  if (left === right) return 1
+  const leftCharacters = new Set([...left])
+  const rightCharacters = new Set([...right])
+  const intersection = [...leftCharacters].filter((character) => rightCharacters.has(character)).length
+  const union = new Set([...leftCharacters, ...rightCharacters]).size
+  const characterScore = union ? (intersection / union) * 0.72 : 0
+  const containsScore = left.includes(right) || right.includes(left)
+    ? (Math.min(left.length, right.length) / Math.max(left.length, right.length)) * 0.9 + 0.1
+    : 0
+  return Math.max(characterScore, containsScore)
+}
+
+function similarTagNames(name: string) {
+  return tagSuggestions.value
+    .filter((tag) => tag.name !== name)
+    .map((tag) => ({ ...tag, score: tagNameSimilarity(name, tag.name) }))
+    .filter((tag) => tag.score >= 0.23)
+    .sort((left, right) => right.score - left.score || right.count - left.count)
+    .slice(0, 3)
+}
+
+function similarityState(id: string) {
+  return submissionSimilarities.value[id]
+}
+
+async function loadSubmissionSimilarity(item: AdminJokeSubmission) {
+  const current = submissionSimilarities.value[item.id]
+  if (current?.loading || current?.loaded) return
+  submissionSimilarities.value[item.id] = {
+    loading: true,
+    loaded: false,
+    error: '',
+    matches: [],
+    tagMatches: [],
+  }
+  try {
+    const result = await api<{ matches: SimilarJoke[], tagMatches: SimilarTagGroup[] }>(`/api/admin/submissions/${encodeURIComponent(item.id)}/similar`)
+    submissionSimilarities.value[item.id] = {
+      loading: false,
+      loaded: true,
+      error: '',
+      matches: result.matches,
+      tagMatches: result.tagMatches,
+    }
+  } catch (caught) {
+    submissionSimilarities.value[item.id] = {
+      loading: false,
+      loaded: true,
+      error: readError(caught),
+      matches: [],
+      tagMatches: [],
+    }
+  }
+}
+
 async function mergeTags() {
   if (!tagMerge.value || mergingTags.value) return
   const targetTag = tagMerge.value.name.trim().replace(/^#+\s*/, '').trim()
@@ -309,6 +389,7 @@ async function loadCurrentPanel() {
       ])
       jokeSubmissions.value = result.items
       tagSuggestions.value = tagsResult.items
+      submissionSimilarities.value = {}
     } else if (activePanel.value === 'jokes') {
       const [result, tagsResult] = await Promise.all([
         api<{ items: Meme[] }>('/api/admin/jokes'),
@@ -696,6 +777,10 @@ watch(jokeTotalPages, (total) => {
   jokePage.value = Math.min(jokePage.value, total)
 })
 
+watch(jokeAdminQuery, () => {
+  jokePage.value = 1
+})
+
 onMounted(async () => {
   try {
     const session = await api<{ authenticated: boolean, user?: AdminSessionUser }>('/api/admin/session')
@@ -844,7 +929,13 @@ onMounted(async () => {
         <section v-else-if="activePanel === 'joke-review'">
           <div v-if="!jokeSubmissions.length" class="admin-state">当前没有{{ statusLabels[status] }}的烂梗投稿。</div>
           <div v-else class="admin-submission-list">
-            <article v-for="item in jokeSubmissions" :key="item.id" class="admin-submission-card">
+            <article
+              v-for="item in jokeSubmissions"
+              :key="item.id"
+              class="admin-submission-card"
+              @mouseenter="loadSubmissionSimilarity(item)"
+              @focusin="loadSubmissionSimilarity(item)"
+            >
               <div class="admin-submission-meta"><span class="category-tag">{{ item.category }}</span><time>{{ formatDate(item.createdAt) }}</time></div>
               <blockquote>{{ item.text }}</blockquote>
               <dl>
@@ -852,6 +943,32 @@ onMounted(async () => {
                 <div><dt>标签</dt><dd>{{ item.tags.length ? item.tags.join(' / ') : '无' }}</dd></div>
                 <div v-if="item.rejectionReason"><dt>拒绝原因</dt><dd>{{ item.rejectionReason }}</dd></div>
               </dl>
+              <section v-if="similarityState(item.id)" class="admin-similarity-panel">
+                <p v-if="similarityState(item.id)?.loading" class="admin-similarity-loading">正在检查相似烂梗和标签…</p>
+                <p v-else-if="similarityState(item.id)?.error" class="admin-similarity-error">查重失败：{{ similarityState(item.id)?.error }}</p>
+                <template v-else>
+                  <div v-if="similarityState(item.id)?.matches.length" class="admin-similarity-group">
+                    <strong>疑似相似烂梗</strong>
+                    <article v-for="match in similarityState(item.id)?.matches" :key="match.id">
+                      <div><b>{{ Math.round(match.score * 100) }}%</b><span>{{ match.reasons.join(' · ') }}</span></div>
+                      <p>{{ match.text }}</p>
+                      <small>{{ match.tags.map(tag => `#${tag}`).join(' ') || '无标签' }}</small>
+                    </article>
+                  </div>
+                  <div v-if="similarityState(item.id)?.tagMatches.length" class="admin-similarity-group admin-similar-tags">
+                    <strong>已有或相似标签</strong>
+                    <p v-for="group in similarityState(item.id)?.tagMatches" :key="group.inputTag">
+                      <b>#{{ group.inputTag }}</b>
+                      <span>→</span>
+                      <span v-for="tag in group.items" :key="tag.name">#{{ tag.name }} {{ Math.round(tag.score * 100) }}%</span>
+                    </p>
+                  </div>
+                  <p
+                    v-if="!similarityState(item.id)?.matches.length && !similarityState(item.id)?.tagMatches.length"
+                    class="admin-similarity-clear"
+                  >未发现明显相似内容。</p>
+                </template>
+              </section>
               <div v-if="item.status === 'pending'" class="admin-review-actions">
                 <button class="admin-reject-button" type="button" :disabled="processingId === item.id" @click="rejectJoke(item)">拒绝</button>
                 <button class="ghost-button" type="button" :disabled="processingId === item.id" @click="openJokeEditor(item, 'submission')">编辑内容与标签</button>
@@ -863,10 +980,13 @@ onMounted(async () => {
 
         <section v-else-if="activePanel === 'jokes'">
           <div class="admin-list-toolbar">
-            <span>共 {{ jokes.length }} 条，{{ jokes.filter(item => !item.tags.length).length }} 条暂无标签</span>
-            <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="toggleUntaggedFilter">
-              {{ showOnlyUntagged ? '显示全部' : '只看无标签' }}
-            </button>
+            <span>共 {{ jokes.length }} 条，当前匹配 {{ visibleJokes.length }} 条，{{ jokes.filter(item => !item.tags.length).length }} 条暂无标签</span>
+            <div class="admin-toolbar-actions">
+              <input v-model="jokeAdminQuery" type="search" maxlength="60" placeholder="搜索梗内容、标签或出处" aria-label="搜索已有烂梗" />
+              <button class="ghost-button" type="button" :class="{ active: showOnlyUntagged }" @click="toggleUntaggedFilter">
+                {{ showOnlyUntagged ? '显示全部' : '只看无标签' }}
+              </button>
+            </div>
           </div>
           <div v-if="!visibleJokes.length" class="admin-state">{{ showOnlyUntagged ? '所有公开烂梗都已经有标签。' : '还没有公开烂梗。' }}</div>
           <div v-else class="admin-submission-list">
@@ -894,8 +1014,13 @@ onMounted(async () => {
 
         <section v-else-if="activePanel === 'tags'" class="admin-tag-manager">
           <div class="admin-list-toolbar">
-            <span>共 {{ tagSuggestions.length }} 个标签。把一个标签拖到另一个标签上即可准备合并。</span>
-            <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
+            <span>共 {{ tagSuggestions.length }} 个标签，当前匹配 {{ managedTags.length }} 个。把一个标签拖到另一个标签上即可准备合并。</span>
+            <div class="admin-toolbar-actions">
+              <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
+              <button class="ghost-button" type="button" :class="{ active: showOnlySimilarTags }" @click="showOnlySimilarTags = !showOnlySimilarTags">
+                {{ showOnlySimilarTags ? '显示全部标签' : '只看疑似重复' }}
+              </button>
+            </div>
           </div>
           <div v-if="!managedTags.length" class="admin-state">没有找到匹配标签。</div>
           <div v-else class="admin-tag-grid">
@@ -913,7 +1038,8 @@ onMounted(async () => {
             >
               <strong>#{{ tag.name }}</strong>
               <span>{{ tag.count }} 条烂梗</span>
-              <small>拖到另一个标签上合并</small>
+              <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">可能相似：{{ similarTagNames(tag.name).map(item => `#${item.name}`).join('、') }}</small>
+              <small v-else>拖到另一个标签上合并</small>
             </article>
           </div>
         </section>
