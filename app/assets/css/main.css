@@ -79,9 +79,20 @@ h1 span { color: var(--orange); }
 .random-meta { display: flex; align-items: center; justify-content: space-between; font-size: 13px; opacity: .9; }
 .random-meta button { width: 42px; height: 42px; border: 1px solid rgba(255,255,255,.65); border-radius: 50%; background: transparent; color: white; font-size: 24px; cursor: pointer; }
 
-.ticker { min-height: 50px; display: flex; align-items: center; gap: 38px; padding: 9px clamp(22px, 5vw, 76px); background: var(--ink); color: white; white-space: nowrap; overflow: hidden; font-size: 13px; }
-.ticker span { color: var(--yellow); font-weight: 800; }
-.ticker p { margin: 0; }
+.ticker { min-height: 50px; display: flex; align-items: center; gap: 24px; padding: 9px clamp(22px, 5vw, 76px); background: var(--ink); color: white; overflow: hidden; font-size: 13px; }
+.ticker-label { flex: 0 0 auto; color: var(--yellow); font-weight: 800; }
+.ticker-window { position: relative; height: 22px; min-width: 0; flex: 1; overflow: hidden; }
+.ticker-message { position: absolute; inset: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 22px; }
+.ticker-controls { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+.ticker-controls button { width: 25px; height: 25px; padding: 0; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; background: transparent; color: white; cursor: pointer; line-height: 1; }
+.ticker-controls button:hover { border-color: var(--yellow); background: var(--yellow); color: var(--ink); }
+.ticker-controls small { min-width: 29px; color: #bdb6aa; text-align: center; font-size: 10px; }
+.ticker-slide-enter-active, .ticker-slide-leave-active { transition: transform .38s ease, opacity .38s ease; }
+.ticker-slide-enter-from { opacity: 0; transform: translateY(100%); }
+.ticker-slide-leave-to { opacity: 0; transform: translateY(-100%); }
+@media (prefers-reduced-motion: reduce) {
+  .ticker-slide-enter-active, .ticker-slide-leave-active { transition: opacity .01ms; }
+}
 
 .archive-section { padding: 92px clamp(22px, 5vw, 76px) 110px; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 40px; }
@@ -221,8 +232,9 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .music-player { right: 16px; bottom: 16px; }
   .music-reopen { right: 16px; bottom: 16px; }
   .room-link { width: 100%; margin: 4px 0 0; }
-  .ticker { gap: 18px; }
-  .ticker p:last-child { display: none; }
+  .ticker { gap: 12px; padding-inline: 18px; }
+  .ticker-controls { gap: 4px; }
+  .ticker-controls small { display: none; }
   .archive-section { padding-top: 68px; }
   .emoji-section { padding-top: 68px; }
   .helper-section { padding-top: 72px; padding-bottom: 76px; gap: 48px; }

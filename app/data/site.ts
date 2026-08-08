@@ -9,7 +9,12 @@ export const site = {
   heroImage: '/images/nishuixiaogui-comic-hero.png',
   mascotImage: '/images/nishuixiaogui-mascot-v1.png',
   intro: '常用烂梗一键复制，表情包随手带走。',
-  notice: '水友可以投稿烂梗和表情包，审核通过后公开；点击“复制”就能直接带走。',
+  notices: [
+    '水友可以投稿烂梗和表情包，审核通过后公开；点击“复制”就能直接带走。',
+    '感谢 WinMiao、主任、树树、薯队、萝莉王、泰哥对本网站的技术支持与帮助。',
+    '也欢迎水友们持续提出建议，一起把小龟烂梗补给站做得更好。',
+    '点击任意烂梗卡片的“复制”按钮，就能把梗直接带走。',
+  ],
 }
 
 export const emojiPacks = [

@@ -49,6 +49,10 @@ const isMusicPlaying = ref(false)
 const autoplayBlocked = ref(false)
 const currentTrack = computed(() => bgmTracks.value[selectedTrackIndex.value] ?? bgmTracks.value[0])
 const showStickerSubmit = ref(false)
+const announcementIndex = ref(0)
+const announcements = site.notices
+let announcementTimer: number | null = null
+const announcementPaused = ref(false)
 const stickerDraft = ref({ title: '', description: '', submitterName: '', file: null as File | null })
 const submissionTagOptions = ref<{ name: string, count: number }[]>([])
 const showAllSubmissionTags = ref(false)
@@ -56,6 +60,22 @@ const suggestedTag = ref('')
 const visibleSubmissionTagOptions = computed(() => showAllSubmissionTags.value
   ? submissionTagOptions.value
   : submissionTagOptions.value.slice(0, 10))
+
+function moveAnnouncement(step: number) {
+  announcementIndex.value = (announcementIndex.value + step + announcements.length) % announcements.length
+}
+
+function startAnnouncementRotation() {
+  if (announcementTimer !== null) window.clearInterval(announcementTimer)
+  announcementTimer = window.setInterval(() => {
+    if (!announcementPaused.value) moveAnnouncement(1)
+  }, 5200)
+}
+
+function selectAnnouncement(step: number) {
+  moveAnnouncement(step)
+  startAnnouncementRotation()
+}
 
 function selectedSubmissionTags() {
   return draft.value.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean)
@@ -198,9 +218,13 @@ onMounted(() => {
   void api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } })
     .then((result) => { submissionTagOptions.value = result.items })
     .catch(() => { submissionTagOptions.value = [] })
+  startAnnouncementRotation()
 })
 
-onBeforeUnmount(clearMusicUnlock)
+onBeforeUnmount(() => {
+  clearMusicUnlock()
+  if (announcementTimer !== null) window.clearInterval(announcementTimer)
+})
 </script>
 
 <template>
@@ -260,10 +284,25 @@ onBeforeUnmount(clearMusicUnlock)
         </div>
       </section>
 
-      <section class="ticker" aria-label="站点公告">
-        <span>公告</span>
-        <p>{{ site.notice }}</p>
-        <p>点击任意卡片的复制按钮，就能把梗带走。</p>
+      <section
+        class="ticker"
+        aria-label="站点公告"
+        @mouseenter="announcementPaused = true"
+        @mouseleave="announcementPaused = false"
+        @focusin="announcementPaused = true"
+        @focusout="announcementPaused = false"
+      >
+        <span class="ticker-label">公告</span>
+        <div class="ticker-window" aria-live="polite">
+          <Transition name="ticker-slide">
+            <p :key="announcementIndex" class="ticker-message">{{ announcements[announcementIndex] }}</p>
+          </Transition>
+        </div>
+        <div class="ticker-controls" aria-label="切换公告">
+          <button type="button" aria-label="上一条公告" @click="selectAnnouncement(-1)">←</button>
+          <small>{{ announcementIndex + 1 }}/{{ announcements.length }}</small>
+          <button type="button" aria-label="下一条公告" @click="selectAnnouncement(1)">→</button>
+        </div>
       </section>
 
       <section id="archive" class="archive-section">
