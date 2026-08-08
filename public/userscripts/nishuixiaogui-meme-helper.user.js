@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.5.1
+// @version      0.6.0
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -134,9 +134,19 @@
 
   const quickTags = make('div', 'xg-quick-tags');
 
+  const tagSearch = make('div', 'xg-tag-search');
+  const tagSearchInput = make('input');
+  tagSearchInput.type = 'search';
+  tagSearchInput.placeholder = '搜索标签，例如：龟';
+  tagSearchInput.maxLength = 24;
+  tagSearchInput.setAttribute('aria-label', '搜索标签');
+  const tagSearchOptions = make('div', 'xg-tag-search-options');
+  tagSearchOptions.hidden = true;
+  tagSearch.append(tagSearchInput, tagSearchOptions);
+
   const status = make('p', 'xg-status', '输入关键词，从小龟烂梗库搜索。');
   const results = make('div', 'xg-results');
-  panel.append(header, searchRow, quickTags, status, results);
+  panel.append(header, searchRow, quickTags, tagSearch, status, results);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
@@ -144,6 +154,8 @@
   let pageHidden = false;
   let suppressLauncherClick = false;
   let activeTag = '';
+  let quickTagItems = [];
+  let tagSearchTimer = 0;
 
   function defaultLauncherPosition() {
     return {
@@ -354,12 +366,13 @@
   }
 
   function renderQuickTags(items) {
+    quickTagItems = items;
     quickTags.innerHTML = '';
-    const allButton = make('button', activeTag ? '' : 'is-active', '全部');
+    const allButton = make('button', activeTag ? '' : 'is-active', '全部烂梗');
     allButton.type = 'button';
     allButton.addEventListener('click', function () {
       activeTag = '';
-      renderQuickTags(items);
+      renderQuickTags(quickTagItems);
       void search();
     });
     quickTags.append(allButton);
@@ -369,11 +382,64 @@
       button.title = item.count + ' 条烂梗';
       button.addEventListener('click', function () {
         activeTag = activeTag === item.name ? '' : item.name;
-        renderQuickTags(items);
+        renderQuickTags(quickTagItems);
         void search();
       });
       quickTags.append(button);
     });
+    if (activeTag && !items.some(function (item) { return item.name === activeTag; })) {
+      const selectedButton = make('button', 'is-active', '#' + activeTag);
+      selectedButton.type = 'button';
+      selectedButton.title = '当前搜索标签，点击取消';
+      selectedButton.addEventListener('click', function () {
+        activeTag = '';
+        renderQuickTags(quickTagItems);
+        void search();
+      });
+      quickTags.append(selectedButton);
+    }
+  }
+
+  function hideTagSearchOptions() {
+    tagSearchOptions.hidden = true;
+    tagSearchOptions.replaceChildren();
+  }
+
+  function renderTagSearchOptions(items) {
+    tagSearchOptions.replaceChildren();
+    if (!items.length) {
+      tagSearchOptions.append(make('p', 'xg-tag-search-empty', '没有匹配标签'));
+    } else {
+      items.forEach(function (item) {
+        const button = make('button', '', '#' + item.name);
+        button.type = 'button';
+        button.append(make('small', '', item.count + ' 条'));
+        button.addEventListener('click', function () {
+          activeTag = item.name;
+          tagSearchInput.value = '';
+          hideTagSearchOptions();
+          renderQuickTags(quickTagItems);
+          void search();
+        });
+        tagSearchOptions.append(button);
+      });
+    }
+    tagSearchOptions.hidden = false;
+  }
+
+  async function searchTags() {
+    const query = tagSearchInput.value.trim();
+    if (!query) {
+      hideTagSearchOptions();
+      return;
+    }
+    try {
+      const data = await request('GET', '/api/tags?limit=20&query=' + encodeURIComponent(query));
+      if (tagSearchInput.value.trim() === query) renderTagSearchOptions(data.items || []);
+    } catch (error) {
+      console.error('[小龟烂梗助手] 标签搜索失败', error);
+      if (tagSearchInput.value.trim() === query) renderTagSearchOptions([]);
+    }
   }
 
   async function loadQuickTags() {
@@ -406,6 +472,16 @@
       void search();
     }
   });
+  tagSearchInput.addEventListener('input', function () {
+    window.clearTimeout(tagSearchTimer);
+    tagSearchTimer = window.setTimeout(function () { void searchTags(); }, 180);
+  });
+  tagSearchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') hideTagSearchOptions();
+  });
+  document.addEventListener('pointerdown', function (event) {
+    if (!tagSearch.contains(event.target)) hideTagSearchOptions();
+  });
 
   GM_registerMenuCommand('隐藏 / 恢复小龟助手', function () {
     setPageHidden(!pageHidden);
@@ -429,7 +505,7 @@
     '.xg-launcher.is-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
     '.xg-panel{display:none;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;font:14px/1.5 system-ui}',
     '.xg-panel.is-open{display:flex;flex-direction:column}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35}',
-    '.xg-header,.xg-search,.xg-quick-tags,.xg-status{flex:0 0 auto}',
+    '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
     '.xg-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 12px 16px;background:#f3ce49;border-bottom:1px solid #171410;touch-action:none;user-select:none;cursor:grab}',
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
     '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;cursor:pointer}',
@@ -440,6 +516,11 @@
     '.xg-quick-tags{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
     '.xg-quick-tags button{flex:0 0 auto;border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:#fffaf0;color:#171410;font-size:10px;cursor:pointer}',
     '.xg-quick-tags button.is-active{border-color:#171410;background:#171410;color:white}',
+    '.xg-tag-search{position:relative;padding:7px 12px;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
+    '.xg-tag-search>input{box-sizing:border-box;width:100%;border:1px solid rgba(23,20,16,.35);border-radius:6px;padding:7px 9px;background:#fffaf0;color:#171410;font-size:11px}',
+    '.xg-tag-search-options{position:absolute;z-index:4;top:calc(100% - 4px);left:12px;right:12px;max-height:170px;overflow:auto;border:1px solid #171410;background:white;box-shadow:4px 4px 0 #f3ce49}',
+    '.xg-tag-search-options[hidden]{display:none}.xg-tag-search-options button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;border:0;border-bottom:1px solid rgba(23,20,16,.12);padding:8px 10px;background:white;color:#171410;text-align:left;cursor:pointer}',
+    '.xg-tag-search-options button:hover{background:#fff3bf}.xg-tag-search-options small{color:#746c61}.xg-tag-search-empty{margin:0;padding:10px;color:#746c61;font-size:11px}',
     '.xg-status{margin:0;padding:9px 13px;overflow:hidden;color:#625b52;background:#f4efe5;font-size:11px;white-space:nowrap;text-overflow:ellipsis}.xg-status.is-error{color:#b3261e}',
     '.xg-results{min-height:0;flex:1 1 auto;overflow:auto;padding:10px;display:grid;gap:9px}',
     '.xg-card{padding:11px;border:1px solid rgba(23,20,16,.25);background:white}',

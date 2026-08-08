@@ -16,7 +16,7 @@ useSeoMeta({
   robots: 'noindex, nofollow',
 })
 
-type Panel = 'joke-review' | 'jokes' | 'sticker-review' | 'stickers' | 'bgm' | 'security'
+type Panel = 'joke-review' | 'jokes' | 'tags' | 'sticker-review' | 'stickers' | 'bgm' | 'security'
 type JokeEditor = {
   kind: 'submission' | 'published'
   id: string
@@ -30,6 +30,7 @@ type JokeEditor = {
 const panelLabels: Record<Panel, string> = {
   'joke-review': '烂梗审核',
   jokes: '烂梗管理',
+  tags: '标签管理',
   'sticker-review': '表情包审核',
   stickers: '表情包管理',
   bgm: 'BGM 管理',
@@ -59,6 +60,11 @@ const mediaItems = ref<MediaAsset[]>([])
 const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
+const tagAdminQuery = ref('')
+const draggedTag = ref('')
+const tagDropTarget = ref('')
+const tagMerge = ref<{ source: string, target: string, name: string } | null>(null)
+const mergingTags = ref(false)
 const showAllEditorTags = ref(false)
 const showAllDraftTags = ref(false)
 const showOnlyUntagged = ref(false)
@@ -87,6 +93,12 @@ const visibleDraftTagSuggestions = computed(() => showAllDraftTags.value
   : tagSuggestions.value.slice(0, 10))
 const editorSelectedTags = computed(() => jokeEditor.value ? splitTags(jokeEditor.value.tags) : [])
 const draftSelectedTags = computed(() => splitTags(jokeDraft.value.tags))
+const managedTags = computed(() => {
+  const query = tagAdminQuery.value.trim().toLocaleLowerCase('zh-CN')
+  return query
+    ? tagSuggestions.value.filter((tag) => tag.name.toLocaleLowerCase('zh-CN').includes(query))
+    : tagSuggestions.value
+})
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -169,6 +181,58 @@ function addEditorTag() {
   newEditorTag.value = ''
 }
 
+function startTagDrag(event: DragEvent, name: string) {
+  draggedTag.value = name
+  event.dataTransfer?.setData('text/plain', name)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function openTagMerge(source: string, target: string) {
+  if (!source || !target || source === target) return
+  const targetCount = tagSuggestions.value.find((tag) => tag.name === target)?.count ?? 0
+  const sourceCount = tagSuggestions.value.find((tag) => tag.name === source)?.count ?? 0
+  tagMerge.value = { source, target, name: targetCount >= sourceCount ? target : source }
+  draggedTag.value = ''
+  tagDropTarget.value = ''
+}
+
+function dropTag(event: DragEvent, target: string) {
+  const source = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
+  openTagMerge(source, target)
+}
+
+function tagUsageCount(name: string) {
+  return tagSuggestions.value.find((tag) => tag.name === name)?.count ?? 0
+}
+
+async function mergeTags() {
+  if (!tagMerge.value || mergingTags.value) return
+  const targetTag = tagMerge.value.name.trim().replace(/^#+\s*/, '').trim()
+  if (!targetTag) {
+    error.value = '请填写合并后的标签名称'
+    return
+  }
+  mergingTags.value = true
+  clearFeedback()
+  try {
+    const result = await api<{ targetTag: string, updatedJokes: number, updatedSubmissions: number }>('/api/admin/tags/merge', {
+      method: 'POST',
+      body: {
+        sourceTags: [tagMerge.value.source, tagMerge.value.target],
+        targetTag,
+      },
+    })
+    tagMerge.value = null
+    notifyMemeArchiveUpdated()
+    message.value = `标签已合并为 #${result.targetTag}，更新了 ${result.updatedJokes} 条烂梗和 ${result.updatedSubmissions} 条投稿。`
+    await loadCurrentPanel()
+  } catch (caught) {
+    error.value = readError(caught)
+  } finally {
+    mergingTags.value = false
+  }
+}
+
 function readError(value: unknown) {
   const fetchError = value as { data?: { message?: string, statusMessage?: string }, message?: string, statusMessage?: string }
   return fetchError.data?.message ?? fetchError.data?.statusMessage ?? fetchError.message ?? fetchError.statusMessage ?? '操作失败，请稍后重试'
@@ -206,6 +270,7 @@ const auditActionLabels: Record<string, string> = {
   reset_password: '重置密码',
   revoke_sessions: '强制退出',
   change_password: '修改密码',
+  merge: '合并',
 }
 
 const auditEntityLabels: Record<string, string> = {
@@ -215,6 +280,7 @@ const auditEntityLabels: Record<string, string> = {
   sticker: '表情包',
   sticker_submission: '表情包投稿',
   bgm: 'BGM',
+  tag: '标签',
 }
 
 function clearFeedback() {
@@ -249,6 +315,9 @@ async function loadCurrentPanel() {
         api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } }),
       ])
       jokes.value = result.items
+      tagSuggestions.value = tagsResult.items
+    } else if (activePanel.value === 'tags') {
+      const tagsResult = await api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 500 } })
       tagSuggestions.value = tagsResult.items
     } else {
       const kind = activePanel.value === 'bgm' ? 'bgm' : 'sticker'
@@ -823,6 +892,32 @@ onMounted(async () => {
           </nav>
         </section>
 
+        <section v-else-if="activePanel === 'tags'" class="admin-tag-manager">
+          <div class="admin-list-toolbar">
+            <span>共 {{ tagSuggestions.length }} 个标签。把一个标签拖到另一个标签上即可准备合并。</span>
+            <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
+          </div>
+          <div v-if="!managedTags.length" class="admin-state">没有找到匹配标签。</div>
+          <div v-else class="admin-tag-grid">
+            <article
+              v-for="tag in managedTags"
+              :key="tag.name"
+              class="admin-tag-card"
+              :class="{ dragging: draggedTag === tag.name, 'drop-target': tagDropTarget === tag.name && draggedTag !== tag.name }"
+              draggable="true"
+              @dragstart="startTagDrag($event, tag.name)"
+              @dragend="draggedTag = ''; tagDropTarget = ''"
+              @dragenter.prevent="tagDropTarget = tag.name"
+              @dragover.prevent
+              @drop.prevent="dropTag($event, tag.name)"
+            >
+              <strong>#{{ tag.name }}</strong>
+              <span>{{ tag.count }} 条烂梗</span>
+              <small>拖到另一个标签上合并</small>
+            </article>
+          </div>
+        </section>
+
         <section v-else-if="activePanel === 'sticker-review'">
           <div v-if="!mediaItems.length" class="admin-state">当前没有{{ statusLabels[status] }}的表情包投稿。</div>
           <div v-else class="admin-media-grid">
@@ -961,6 +1056,34 @@ onMounted(async () => {
             <div class="admin-editor-actions">
               <button class="ghost-button" type="button" @click="jokeEditor = null">取消</button>
               <button class="primary-button" type="submit">保存修改</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <div v-if="tagMerge" class="admin-editor-backdrop" @click.self="tagMerge = null">
+        <section class="admin-editor-dialog admin-tag-merge-dialog" role="dialog" aria-modal="true" aria-labelledby="tag-merge-title">
+          <div class="admin-editor-title">
+            <div>
+              <p class="eyebrow">标签管理</p>
+              <h2 id="tag-merge-title">合并两个标签</h2>
+            </div>
+            <button type="button" aria-label="关闭合并窗口" @click="tagMerge = null">×</button>
+          </div>
+          <form @submit.prevent="mergeTags">
+            <div class="admin-tag-merge-preview">
+              <span>#{{ tagMerge.source }} · {{ tagUsageCount(tagMerge.source) }} 条</span>
+              <b>＋</b>
+              <span>#{{ tagMerge.target }} · {{ tagUsageCount(tagMerge.target) }} 条</span>
+            </div>
+            <label>
+              合并后的标签名称
+              <input v-model="tagMerge.name" maxlength="24" placeholder="例如：小龟" autofocus required />
+            </label>
+            <p class="admin-merge-warning">确认后，所有相关烂梗和投稿都会改用新名称；同一条内容中的重复标签会自动去除。</p>
+            <div class="admin-editor-actions">
+              <button class="ghost-button" type="button" :disabled="mergingTags" @click="tagMerge = null">取消</button>
+              <button class="primary-button" type="submit" :disabled="mergingTags">{{ mergingTags ? '正在合并…' : '确认合并' }}</button>
             </div>
           </form>
         </section>

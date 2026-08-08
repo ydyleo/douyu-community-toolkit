@@ -291,6 +291,15 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-review-actions button:disabled { cursor: wait; opacity: .55; }
 .admin-list-toolbar { margin: 0 0 18px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border: 1px solid var(--ink); background: #fff; font-size: 12px; }
 .admin-list-toolbar .active { background: var(--ink); color: white; }
+.admin-list-toolbar input { min-width: min(260px, 100%); padding: 9px 11px; border: 1px solid var(--ink); background: var(--cream); }
+.admin-tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.admin-tag-card { min-height: 120px; padding: 18px; display: grid; align-content: center; gap: 5px; border: 1px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--yellow); cursor: grab; user-select: none; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+.admin-tag-card:hover { transform: translateY(-2px); }
+.admin-tag-card.dragging { opacity: .45; cursor: grabbing; }
+.admin-tag-card.drop-target { background: #fff3bf; box-shadow: 7px 7px 0 var(--orange); transform: translateY(-3px); }
+.admin-tag-card strong { font-size: 19px; overflow-wrap: anywhere; }
+.admin-tag-card span { color: #625a69; font-size: 12px; }
+.admin-tag-card small { margin-top: 7px; color: #8a818b; font-size: 10px; }
 .admin-tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: #625a69; font-size: 12px; }
 .admin-tag-list span { padding: 5px 9px; background: #f3ead9; }
 .admin-tag-list.empty span { background: #f4d9d1; color: #8b4231; }
@@ -318,6 +327,10 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-selected-tags button { padding: 6px 9px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: white; cursor: pointer; font-size: 11px; }
 .admin-new-tag-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .admin-new-tag-row button { padding: 0 16px; border: 1px solid var(--ink); background: var(--yellow); color: var(--ink); cursor: pointer; font-weight: 800; }
+.admin-tag-merge-dialog { max-width: 560px; }
+.admin-tag-merge-preview { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 16px; border: 1px dashed var(--ink); background: var(--cream); }
+.admin-tag-merge-preview span { padding: 7px 10px; border: 1px solid var(--ink); border-radius: 999px; background: white; font-size: 12px; font-weight: 800; }
+.admin-merge-warning { margin: 0; padding: 11px 13px; border-left: 4px solid var(--orange); background: #fff0eb; color: #5d3127; font-size: 12px; }
 .admin-editor-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .admin-reject-button { padding: 12px 22px; border: 1px solid var(--ink); background: transparent; cursor: pointer; }
 .admin-reject-button:hover { background: var(--orange); color: white; }
