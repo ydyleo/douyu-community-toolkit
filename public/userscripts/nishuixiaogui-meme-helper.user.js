@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.5.0
+// @version      0.5.1
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -224,6 +224,7 @@
 
   function showStatus(message, isError) {
     status.textContent = message;
+    status.title = message;
     status.classList.toggle('is-error', Boolean(isError));
   }
 
@@ -428,6 +429,7 @@
     '.xg-launcher.is-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
     '.xg-panel{display:none;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;font:14px/1.5 system-ui}',
     '.xg-panel.is-open{display:flex;flex-direction:column}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35}',
+    '.xg-header,.xg-search,.xg-quick-tags,.xg-status{flex:0 0 auto}',
     '.xg-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 12px 16px;background:#f3ce49;border-bottom:1px solid #171410;touch-action:none;user-select:none;cursor:grab}',
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
     '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;cursor:pointer}',
@@ -438,8 +440,8 @@
     '.xg-quick-tags{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
     '.xg-quick-tags button{flex:0 0 auto;border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:#fffaf0;color:#171410;font-size:10px;cursor:pointer}',
     '.xg-quick-tags button.is-active{border-color:#171410;background:#171410;color:white}',
-    '.xg-status{margin:0;padding:9px 13px;color:#625b52;background:#f4efe5;font-size:11px}.xg-status.is-error{color:#b3261e}',
-    '.xg-results{overflow:auto;padding:10px;display:grid;gap:9px}',
+    '.xg-status{margin:0;padding:9px 13px;overflow:hidden;color:#625b52;background:#f4efe5;font-size:11px;white-space:nowrap;text-overflow:ellipsis}.xg-status.is-error{color:#b3261e}',
+    '.xg-results{min-height:0;flex:1 1 auto;overflow:auto;padding:10px;display:grid;gap:9px}',
     '.xg-card{padding:11px;border:1px solid rgba(23,20,16,.25);background:white}',
     '.xg-meme-text{width:100%;padding:0;border:0;background:transparent;color:#171410;text-align:left;font-size:15px;font-weight:700;line-height:1.55;cursor:pointer}',
     '.xg-meta{display:flex;justify-content:space-between;gap:10px;margin-top:8px;color:#746c61;font-size:10px}.xg-meta span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
