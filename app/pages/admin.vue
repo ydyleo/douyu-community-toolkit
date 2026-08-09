@@ -82,7 +82,8 @@ const tagMerge = ref<{ sourceId: string, targetId: string, source: string, targe
 const mergingTags = ref(false)
 const deletingTagId = ref('')
 let tagAutoScrollVelocity = 0
-let tagAutoScrollFrame: number | null = null
+let tagAutoScrollTimer: number | null = null
+let tagAutoScrollStartedAt = 0
 const showAllEditorTags = ref(false)
 const showAllDraftTags = ref(false)
 const showOnlyUntagged = ref(false)
@@ -224,32 +225,43 @@ function startTagDrag(event: DragEvent, id: string) {
 }
 
 function runTagAutoScroll() {
-  if (!tagAutoScrollVelocity) {
-    tagAutoScrollFrame = null
-    return
-  }
-  window.scrollBy(0, tagAutoScrollVelocity)
-  tagAutoScrollFrame = window.requestAnimationFrame(runTagAutoScroll)
+  if (!tagAutoScrollVelocity) return
+  const heldFor = Math.max(0, Date.now() - tagAutoScrollStartedAt)
+  const holdAcceleration = 1 + Math.min(0.7, heldFor / 1_200 * 0.7)
+  window.scrollBy(0, Math.round(tagAutoScrollVelocity * holdAcceleration))
+}
+
+function stopTagAutoScroll() {
+  tagAutoScrollVelocity = 0
+  tagAutoScrollStartedAt = 0
+  if (tagAutoScrollTimer !== null) window.clearInterval(tagAutoScrollTimer)
+  tagAutoScrollTimer = null
 }
 
 function updateTagAutoScroll(pointerY: number) {
   const edge = Math.min(150, window.innerHeight * 0.24)
   const acceleratedSpeed = (distance: number) => {
     const ratio = Math.max(0, distance / edge)
-    return Math.min(56, Math.round(5 + Math.pow(ratio, 1.65) * 43))
+    return Math.min(44, Math.round(6 + Math.pow(ratio, 1.45) * 34))
   }
-  if (pointerY < edge) tagAutoScrollVelocity = -acceleratedSpeed(edge - pointerY)
-  else if (pointerY > window.innerHeight - edge) tagAutoScrollVelocity = acceleratedSpeed(pointerY - (window.innerHeight - edge))
-  else tagAutoScrollVelocity = 0
-  if (tagAutoScrollVelocity && tagAutoScrollFrame === null) tagAutoScrollFrame = window.requestAnimationFrame(runTagAutoScroll)
+  const nextVelocity = pointerY < edge
+    ? -acceleratedSpeed(edge - pointerY)
+    : pointerY > window.innerHeight - edge
+      ? acceleratedSpeed(pointerY - (window.innerHeight - edge))
+      : 0
+  if (!nextVelocity) {
+    stopTagAutoScroll()
+    return
+  }
+  if (Math.sign(nextVelocity) !== Math.sign(tagAutoScrollVelocity)) tagAutoScrollStartedAt = Date.now()
+  tagAutoScrollVelocity = nextVelocity
+  if (tagAutoScrollTimer === null) tagAutoScrollTimer = window.setInterval(runTagAutoScroll, 20)
 }
 
 function finishTagDrag() {
   draggedTag.value = ''
   tagDropTarget.value = ''
-  tagAutoScrollVelocity = 0
-  if (tagAutoScrollFrame !== null) window.cancelAnimationFrame(tagAutoScrollFrame)
-  tagAutoScrollFrame = null
+  stopTagAutoScroll()
 }
 
 function tagNode(id: string) {
