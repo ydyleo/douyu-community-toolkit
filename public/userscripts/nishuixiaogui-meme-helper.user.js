@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.7.7
+// @version      0.7.8
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -512,10 +512,13 @@
     tagSearchOptions.replaceChildren();
   }
 
-  function renderTagSearchOptions(items) {
+  function renderTagSearchOptions(items, query) {
     tagSearchOptions.replaceChildren();
+    const normalizedQuery = query.toLocaleLowerCase('zh-CN');
     const options = items.reduce(function (result, item) {
-      result.push({ name: item.name, count: item.count, isParent: item.isParent });
+      if (item.name.toLocaleLowerCase('zh-CN').includes(normalizedQuery)) {
+        result.push({ name: item.name, count: item.count, isParent: item.isParent });
+      }
       (item.children || []).forEach(function (child) { result.push({ name: child.name, count: child.count, isParent: false }); });
       return result;
     }, []);
@@ -548,10 +551,10 @@
     }
     try {
       const data = await request('GET', '/api/tags?limit=20&query=' + encodeURIComponent(query));
-      if (tagSearchInput.value.trim() === query) renderTagSearchOptions(data.items || []);
+      if (tagSearchInput.value.trim() === query) renderTagSearchOptions(data.items || [], query);
     } catch (error) {
       console.error('[小龟烂梗助手] 标签搜索失败', error);
-      if (tagSearchInput.value.trim() === query) renderTagSearchOptions([]);
+      if (tagSearchInput.value.trim() === query) renderTagSearchOptions([], query);
     }
   }
 

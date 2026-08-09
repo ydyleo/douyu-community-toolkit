@@ -54,7 +54,8 @@ const announcements = site.notices
 let announcementTimer: number | null = null
 const announcementPaused = ref(false)
 const stickerDraft = ref({ title: '', description: '', submitterName: '', file: null as File | null })
-type UserscriptRelease = { version: string, releasedAt: string, title: string, notes: string[], downloadUrl: string }
+type UserscriptReleaseEntry = { version: string, releasedAt: string, title: string, notes: string[] }
+type UserscriptRelease = UserscriptReleaseEntry & { downloadUrl: string, history: UserscriptReleaseEntry[] }
 const userscriptRelease = ref<UserscriptRelease | null>(null)
 type SubmissionTagOption = {
   id: string
@@ -448,12 +449,29 @@ onBeforeUnmount(() => {
           <h2>把烂梗库<br />搬进直播间。</h2>
           <p>打开任意斗鱼直播间都能使用。搜索烂梗后可以复制、填入弹幕框，或带 3 秒冷却地一键发送。</p>
           <a class="primary-button" href="/userscripts/nishuixiaogui-meme-helper.user.js" target="_blank">安装小龟烂梗助手 <span>↗</span></a>
-          <div v-if="userscriptRelease" class="helper-release" aria-label="小龟助手版本信息">
-            <strong>v{{ userscriptRelease.version }}</strong>
-            <span>更新于 {{ formatReleaseTime(userscriptRelease.releasedAt) }}</span>
-            <p>{{ userscriptRelease.title }}</p>
-            <small>{{ userscriptRelease.notes.join(' · ') }}</small>
-          </div>
+          <details v-if="userscriptRelease" class="helper-release">
+            <summary>
+              <span class="helper-release-current">
+                <span>
+                  <strong>v{{ userscriptRelease.version }}</strong>
+                  <time :datetime="userscriptRelease.releasedAt">更新于 {{ formatReleaseTime(userscriptRelease.releasedAt) }}</time>
+                </span>
+                <b>{{ userscriptRelease.title }}</b>
+                <small>{{ userscriptRelease.notes.join(' · ') }}</small>
+              </span>
+              <span class="helper-release-toggle">查看历史版本 <i aria-hidden="true">⌄</i></span>
+            </summary>
+            <ol class="helper-release-history" aria-label="小龟助手历史版本">
+              <li v-for="release in userscriptRelease.history.slice(1)" :key="release.version">
+                <div>
+                  <strong>v{{ release.version }}</strong>
+                  <time :datetime="release.releasedAt">{{ formatReleaseTime(release.releasedAt) }}</time>
+                </div>
+                <p>{{ release.title }}</p>
+                <small>{{ release.notes.join(' · ') }}</small>
+              </li>
+            </ol>
+          </details>
           <small>安装后打开任意斗鱼直播间，就会出现可自由拖动的“小龟烂梗”按钮。</small>
         </div>
         <div class="helper-steps">
