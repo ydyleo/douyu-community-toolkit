@@ -315,12 +315,8 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-toggle-copy { display: grid; line-height: 1.15; white-space: nowrap; }
 .admin-toggle-copy strong { font-size: 11px; }
 .admin-toggle-copy small { margin-top: 2px; color: #766e63; font-size: 9px; }
-.admin-root-dropzone { margin: 0 0 18px; padding: 10px 18px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #bcb3a7; background: #f4eee3; color: #766e63; opacity: .62; transition: opacity .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease; }
-.admin-root-dropzone.active { border-color: var(--orange); background: #fff7e8; color: #7a3d20; opacity: 1; }
-.admin-root-dropzone.targeted { box-shadow: 4px 4px 0 var(--orange); }
-.admin-root-dropzone strong { font-size: 12px; }
-.admin-root-dropzone span { font-size: 10px; color: #8d6754; }
 .admin-tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); align-items: start; gap: 20px 24px; }
+.admin-tag-grid.root-drop-active { padding: 8px; margin: -8px; background: rgba(255, 225, 92, .12); }
 .admin-tag-node { position: relative; min-width: 0; }
 .admin-tag-card { position: relative; min-height: 132px; padding: 20px; display: grid; align-content: center; gap: 5px; overflow: hidden; border: 1px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--yellow); cursor: grab; user-select: none; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
 .admin-tag-card:hover { transform: translateY(-2px); }
@@ -467,7 +463,6 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .admin-toolbar-actions { width: 100%; align-items: stretch; flex-direction: column; }
   .admin-toolbar-actions input[type="search"] { width: 100%; }
   .admin-filter-toggle { justify-content: center; }
-  .admin-root-dropzone { align-items: flex-start; flex-direction: column; }
   .admin-tag-grid { grid-template-columns: 1fr; }
   .admin-child-list { min-height: 88px; }
   .admin-tag-choice-actions { grid-template-columns: 1fr; }

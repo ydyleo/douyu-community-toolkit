@@ -480,7 +480,10 @@ async function loadCurrentPanel() {
       const result = await api<{ items: TagTreeNode[] }>('/api/admin/tags/tree')
       tagNodes.value = result.items
       tagSuggestions.value = result.items.map(({ name, count }) => ({ name, count }))
-      if (expandedTagId.value && !result.items.some((item) => item.id === expandedTagId.value && !item.parentId)) {
+      if (expandedTagId.value && (
+        !result.items.some((item) => item.id === expandedTagId.value && !item.parentId)
+        || !result.items.some((item) => item.parentId === expandedTagId.value)
+      )) {
         expandedTagId.value = ''
       }
     } else {
@@ -1102,7 +1105,7 @@ onMounted(async () => {
 
         <section v-else-if="activePanel === 'tags'" class="admin-tag-manager">
           <div class="admin-list-toolbar">
-            <span>共 {{ tagNodes.length }} 个标签，当前显示 {{ visibleRootTagNodes.length }} 组。把标签拖到另一张卡片上，再选择合并或设为子标签。</span>
+            <span>共 {{ tagNodes.length }} 个标签，当前显示 {{ visibleRootTagNodes.length }} 组。拖到另一张卡片可选择合并或设为子标签；把子标签拖到父标签外的空白处可恢复独立。</span>
             <div class="admin-toolbar-actions">
               <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
               <label class="admin-filter-toggle" :class="{ active: showOnlySimilarTags }">
@@ -1115,18 +1118,15 @@ onMounted(async () => {
               </label>
             </div>
           </div>
+          <div v-if="!visibleRootTagNodes.length" class="admin-state">没有找到匹配标签。</div>
           <div
-            class="admin-root-dropzone"
-            :class="{ active: draggedTag, targeted: tagDropTarget === 'root' }"
-            @dragenter.prevent="tagDropTarget = 'root'"
+            v-else
+            class="admin-tag-grid"
+            :class="{ 'root-drop-active': Boolean(draggedTag && tagNode(draggedTag)?.parentId) }"
+            @dragenter.self="tagDropTarget = 'root'"
             @dragover.prevent
             @drop.prevent="dropTagToRoot"
           >
-            <strong>移到顶层</strong>
-            <span>把子标签拖到这里，它会恢复为独立标签</span>
-          </div>
-          <div v-if="!visibleRootTagNodes.length" class="admin-state">没有找到匹配标签。</div>
-          <div v-else class="admin-tag-grid" @dragover.prevent @drop.prevent.self="dropTagToRoot">
             <div
               v-for="tag in visibleRootTagNodes"
               :key="tag.id"
@@ -1150,7 +1150,7 @@ onMounted(async () => {
                 <small v-else-if="childTagNodes(tag.id).length">点击{{ expandedTagId === tag.id ? '收起' : '展开' }}子标签</small>
                 <small v-else>把另一个标签拖到这里进行整理</small>
               </article>
-              <div v-if="expandedTagId === tag.id" class="admin-child-list" aria-label="子标签">
+              <div v-if="expandedTagId === tag.id && childTagNodes(tag.id).length" class="admin-child-list" aria-label="子标签">
                 <article
                   v-for="(child, index) in childTagNodes(tag.id)"
                   :key="child.id"
