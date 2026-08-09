@@ -80,6 +80,9 @@ const tagDropTarget = ref('')
 const expandedTagId = ref('')
 const tagMerge = ref<{ sourceId: string, targetId: string, source: string, target: string, name: string, mode: 'choose' | 'merge' } | null>(null)
 const mergingTags = ref(false)
+const deletingTagId = ref('')
+let tagAutoScrollVelocity = 0
+let tagAutoScrollFrame: number | null = null
 const showAllEditorTags = ref(false)
 const showAllDraftTags = ref(false)
 const showOnlyUntagged = ref(false)
@@ -220,6 +223,31 @@ function startTagDrag(event: DragEvent, id: string) {
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 
+function runTagAutoScroll() {
+  if (!tagAutoScrollVelocity) {
+    tagAutoScrollFrame = null
+    return
+  }
+  window.scrollBy(0, tagAutoScrollVelocity)
+  tagAutoScrollFrame = window.requestAnimationFrame(runTagAutoScroll)
+}
+
+function updateTagAutoScroll(pointerY: number) {
+  const edge = Math.min(110, window.innerHeight * 0.2)
+  if (pointerY < edge) tagAutoScrollVelocity = -Math.max(3, Math.round((edge - pointerY) / edge * 15))
+  else if (pointerY > window.innerHeight - edge) tagAutoScrollVelocity = Math.max(3, Math.round((pointerY - (window.innerHeight - edge)) / edge * 15))
+  else tagAutoScrollVelocity = 0
+  if (tagAutoScrollVelocity && tagAutoScrollFrame === null) tagAutoScrollFrame = window.requestAnimationFrame(runTagAutoScroll)
+}
+
+function finishTagDrag() {
+  draggedTag.value = ''
+  tagDropTarget.value = ''
+  tagAutoScrollVelocity = 0
+  if (tagAutoScrollFrame !== null) window.cancelAnimationFrame(tagAutoScrollFrame)
+  tagAutoScrollFrame = null
+}
+
 function tagNode(id: string) {
   return tagNodes.value.find((node) => node.id === id)
 }
@@ -243,16 +271,14 @@ function openTagDropChoice(sourceId: string, targetId: string) {
     name: target.count >= source.count ? target.name : source.name,
     mode: 'choose',
   }
-  draggedTag.value = ''
-  tagDropTarget.value = ''
+  finishTagDrag()
 }
 
 async function moveTagToParent(tagId: string, parentId: string | null) {
   if (!tagId || tagId === parentId) return
   const source = tagNode(tagId)
   if (!source || source.parentId === parentId) {
-    draggedTag.value = ''
-    tagDropTarget.value = ''
+    finishTagDrag()
     return
   }
   const previousParentId = source.parentId
@@ -272,8 +298,36 @@ async function moveTagToParent(tagId: string, parentId: string | null) {
   } catch (caught) {
     error.value = readError(caught)
   } finally {
-    draggedTag.value = ''
-    tagDropTarget.value = ''
+    finishTagDrag()
+  }
+}
+
+async function deleteManagedTag(item: TagTreeNode) {
+  if (deletingTagId.value) return
+  const childCount = childTagNodes(item.id).length
+  const childNotice = childCount ? `\n它的 ${childCount} 个子标签会恢复为独立标签。` : ''
+  if (!window.confirm(`确定删除标签 #${item.name} 吗？\n它会从所有相关烂梗和投稿中移除。${childNotice}`)) return
+  const scrollLeft = window.scrollX
+  const scrollTop = window.scrollY
+  deletingTagId.value = item.id
+  clearFeedback()
+  try {
+    const result = await api<{ updatedJokes: number, updatedSubmissions: number }>(`/api/admin/tags/${encodeURIComponent(item.id)}`, { method: 'DELETE' })
+    tagNodes.value = tagNodes.value
+      .filter((node) => node.id !== item.id)
+      .map((node) => node.parentId === item.id ? { ...node, parentId: null } : node)
+    tagSuggestions.value = tagSuggestions.value.filter((tag) => tag.name !== item.name)
+    if (expandedTagId.value === item.id || (expandedTagId.value === item.parentId && !tagNodes.value.some((node) => node.parentId === item.parentId))) {
+      expandedTagId.value = ''
+    }
+    notifyMemeArchiveUpdated()
+    message.value = `已删除 #${item.name}，同步更新 ${result.updatedJokes} 条烂梗和 ${result.updatedSubmissions} 条投稿。`
+    await nextTick()
+    window.scrollTo(scrollLeft, scrollTop)
+  } catch (caught) {
+    error.value = readError(caught)
+  } finally {
+    deletingTagId.value = ''
   }
 }
 
@@ -284,10 +338,12 @@ function dropTag(event: DragEvent, targetId: string) {
 
 function dropTagToRoot(event: DragEvent) {
   const sourceId = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
+  finishTagDrag()
   void moveTagToParent(sourceId, null)
 }
 
 function handlePageTagDragOver(event: DragEvent) {
+  if (draggedTag.value) updateTagAutoScroll(event.clientY)
   const source = tagNode(draggedTag.value)
   if (!source?.parentId || (event.target as Element | null)?.closest?.('[data-tag-drop-target]')) return
   event.preventDefault()
@@ -453,6 +509,7 @@ const auditActionLabels: Record<string, string> = {
   change_password: '修改密码',
   merge: '合并',
   move: '移动',
+  cleanup: '清理',
 }
 
 const auditEntityLabels: Record<string, string> = {
@@ -500,9 +557,11 @@ async function loadCurrentPanel() {
       jokes.value = result.items
       tagSuggestions.value = tagsResult.items
     } else if (activePanel.value === 'tags') {
+      const cleanupResult = await api<{ deletedCount: number }>('/api/admin/tags/cleanup-unused', { method: 'POST' })
       const result = await api<{ items: TagTreeNode[] }>('/api/admin/tags/tree')
       tagNodes.value = result.items
       tagSuggestions.value = result.items.map(({ name, count }) => ({ name, count }))
+      if (cleanupResult.deletedCount) message.value = `已自动清理 ${cleanupResult.deletedCount} 个没有任何引用的空标签。`
       if (expandedTagId.value && (
         !result.items.some((item) => item.id === expandedTagId.value && !item.parentId)
         || !result.items.some((item) => item.parentId === expandedTagId.value)
@@ -891,8 +950,8 @@ watch(jokeAdminQuery, () => {
 })
 
 onMounted(async () => {
-  window.addEventListener('dragover', handlePageTagDragOver)
-  window.addEventListener('drop', handlePageTagDrop)
+  window.addEventListener('dragover', handlePageTagDragOver, true)
+  window.addEventListener('drop', handlePageTagDrop, true)
   try {
     const session = await api<{ authenticated: boolean, user?: AdminSessionUser }>('/api/admin/session')
     authenticated.value = session.authenticated
@@ -904,8 +963,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('dragover', handlePageTagDragOver)
-  window.removeEventListener('drop', handlePageTagDrop)
+  finishTagDrag()
+  window.removeEventListener('dragover', handlePageTagDragOver, true)
+  window.removeEventListener('drop', handlePageTagDrop, true)
 })
 </script>
 
@@ -1167,11 +1227,20 @@ onBeforeUnmount(() => {
                 draggable="true"
                 @click="toggleTagChildren(tag.id)"
                 @dragstart="startTagDrag($event, tag.id)"
-                @dragend="draggedTag = ''; tagDropTarget = ''"
+                @dragend="finishTagDrag"
                 @dragenter.prevent="tagDropTarget = tag.id"
                 @dragover.prevent
                 @drop.stop.prevent="dropTag($event, tag.id)"
               >
+                <button
+                  class="admin-tag-delete"
+                  type="button"
+                  draggable="false"
+                  :disabled="deletingTagId === tag.id"
+                  :aria-label="`删除标签 ${tag.name}`"
+                  @mousedown.stop
+                  @click.stop="deleteManagedTag(tag)"
+                >{{ deletingTagId === tag.id ? '删除中' : '删除' }}</button>
                 <strong><i v-if="childTagNodes(tag.id).length" class="admin-parent-star" aria-hidden="true">★</i>#{{ tag.name }}</strong>
                 <span>{{ tag.count }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
                 <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
@@ -1187,11 +1256,20 @@ onBeforeUnmount(() => {
                   :class="{ dragging: draggedTag === child.id, 'drop-target': tagDropTarget === child.id && draggedTag !== child.id }"
                   draggable="true"
                   @dragstart="startTagDrag($event, child.id)"
-                  @dragend="draggedTag = ''; tagDropTarget = ''"
+                  @dragend="finishTagDrag"
                   @dragenter.stop.prevent="tagDropTarget = child.id"
                   @dragover.stop.prevent
                   @drop.stop.prevent="dropTag($event, child.id)"
                 >
+                  <button
+                    class="admin-tag-delete"
+                    type="button"
+                    draggable="false"
+                    :disabled="deletingTagId === child.id"
+                    :aria-label="`删除标签 ${child.name}`"
+                    @mousedown.stop
+                    @click.stop="deleteManagedTag(child)"
+                  >{{ deletingTagId === child.id ? '删除中' : '删除' }}</button>
                   <strong>#{{ child.name }}</strong>
                   <span>{{ child.count }} 条</span>
                 </article>
