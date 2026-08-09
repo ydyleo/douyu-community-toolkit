@@ -249,11 +249,26 @@ function openTagDropChoice(sourceId: string, targetId: string) {
 
 async function moveTagToParent(tagId: string, parentId: string | null) {
   if (!tagId || tagId === parentId) return
+  const source = tagNode(tagId)
+  if (!source || source.parentId === parentId) {
+    draggedTag.value = ''
+    tagDropTarget.value = ''
+    return
+  }
+  const previousParentId = source.parentId
+  const scrollLeft = import.meta.client ? window.scrollX : 0
+  const scrollTop = import.meta.client ? window.scrollY : 0
   clearFeedback()
   try {
     await api(`/api/admin/tags/${encodeURIComponent(tagId)}/move`, { method: 'POST', body: { parentId } })
+    tagNodes.value = tagNodes.value.map((node) => node.id === tagId ? { ...node, parentId } : node)
+    if (parentId) expandedTagId.value = parentId
+    else if (previousParentId === expandedTagId.value && !tagNodes.value.some((node) => node.parentId === previousParentId)) {
+      expandedTagId.value = ''
+    }
     message.value = parentId ? '子标签关系已更新。' : '标签已移到顶层。'
-    await loadCurrentPanel()
+    await nextTick()
+    if (import.meta.client) window.scrollTo(scrollLeft, scrollTop)
   } catch (caught) {
     error.value = readError(caught)
   } finally {
