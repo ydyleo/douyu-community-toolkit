@@ -1109,8 +1109,8 @@ onMounted(async () => {
             </div>
           </div>
           <div
-            v-if="draggedTag"
             class="admin-root-dropzone"
+            :class="{ active: draggedTag, targeted: tagDropTarget === 'root' }"
             @dragenter.prevent="tagDropTarget = 'root'"
             @dragover.prevent
             @drop.prevent="dropTagToRoot"
@@ -1150,7 +1150,7 @@ onMounted(async () => {
                   class="admin-child-tag"
                   :class="{ dragging: draggedTag === child.id, 'drop-target': tagDropTarget === child.id && draggedTag !== child.id }"
                   draggable="true"
-                  @dragstart.stop="startTagDrag($event, child.id)"
+                  @dragstart="startTagDrag($event, child.id)"
                   @dragend="draggedTag = ''; tagDropTarget = ''"
                   @dragenter.stop.prevent="tagDropTarget = child.id"
                   @dragover.stop.prevent
