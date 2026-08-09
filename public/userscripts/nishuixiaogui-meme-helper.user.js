@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.7.6
+// @version      0.7.7
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -150,7 +150,7 @@
   searchInput.type = 'search';
   searchInput.placeholder = '搜一句烂梗……';
   searchInput.maxLength = 60;
-  const clearSearchButton = make('button', 'xg-input-clear', '×');
+  const clearSearchButton = make('button', 'xg-input-clear');
   clearSearchButton.type = 'button';
   clearSearchButton.hidden = true;
   clearSearchButton.setAttribute('aria-label', '清空烂梗搜索');
@@ -170,7 +170,7 @@
   tagSearchInput.placeholder = '搜索标签，例如：龟';
   tagSearchInput.maxLength = 24;
   tagSearchInput.setAttribute('aria-label', '搜索标签');
-  const clearTagSearchButton = make('button', 'xg-input-clear', '×');
+  const clearTagSearchButton = make('button', 'xg-input-clear');
   clearTagSearchButton.type = 'button';
   clearTagSearchButton.hidden = true;
   clearTagSearchButton.setAttribute('aria-label', '清空标签搜索');
@@ -654,10 +654,11 @@
     '.xg-update-notice a{flex:0 0 auto;border:1px solid #171410;padding:5px 8px;background:#ff5c35;color:white;text-decoration:none;font-size:10px;font-weight:800}',
     '.xg-search{display:flex;gap:8px;padding:12px;border-bottom:1px solid rgba(23,20,16,.18)}',
     '.xg-search-input-wrap,.xg-tag-search-input-wrap{position:relative;min-width:0}',
-    '.xg-search-input-wrap{flex:1}.xg-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid #171410;padding:9px 34px 9px 10px;background:white;color:#171410}',
+    '.xg-search-input-wrap{flex:1}.xg-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid #171410;padding:9px 29px 9px 10px;background:white;color:#171410}',
     '.xg-search-button{border:1px solid #171410;padding:8px 13px;background:#171410;color:white;cursor:pointer}',
-    '.xg-input-clear{width:24px;height:24px;padding:0;position:absolute;top:50%;right:6px;display:grid;place-items:center;transform:translateY(-50%);border:0;border-radius:50%;background:rgba(23,20,16,.1);color:#171410;font-size:17px;line-height:1;cursor:pointer}',
-    '.xg-input-clear[hidden]{display:none}.xg-input-clear:hover{background:#171410;color:white}.xg-search input::-webkit-search-cancel-button,.xg-tag-search input::-webkit-search-cancel-button{display:none}',
+    '.xg-input-clear{width:18px;height:18px;padding:0;position:absolute;top:50%;right:6px;transform:translateY(-50%);border:0;border-radius:50%;background:rgba(23,20,16,.1);color:#171410;cursor:pointer}',
+    '.xg-input-clear::before,.xg-input-clear::after{content:"";width:8px;height:1.5px;position:absolute;top:50%;left:50%;border-radius:2px;background:currentColor;transform:translate(-50%,-50%) rotate(45deg)}',
+    '.xg-input-clear::after{transform:translate(-50%,-50%) rotate(-45deg)}.xg-input-clear[hidden]{display:none}.xg-input-clear:hover{background:#171410;color:white}.xg-input-clear:focus-visible{outline:2px solid #3667e9;outline-offset:1px}.xg-search input::-webkit-search-cancel-button,.xg-tag-search input::-webkit-search-cancel-button{display:none}',
     '.xg-quick-tags{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
     '.xg-quick-tags button{flex:0 0 auto;border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:#fffaf0;color:#171410;font-size:10px;cursor:pointer}',
     '.xg-quick-tags button.is-active{border-color:#171410;background:#171410;color:white}',
@@ -665,7 +666,7 @@
     '.xg-quick-tag-children[hidden]{display:none}.xg-quick-tag-children button{border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:white;color:#171410;font-size:10px;cursor:pointer}',
     '.xg-quick-tag-children button.is-active{border-color:#171410;background:#171410;color:white}',
     '.xg-tag-search{position:relative;padding:7px 12px;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
-    '.xg-tag-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid rgba(23,20,16,.35);border-radius:6px;padding:7px 34px 7px 9px;background:#fffaf0;color:#171410;font-size:11px}',
+    '.xg-tag-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid rgba(23,20,16,.35);border-radius:6px;padding:7px 29px 7px 9px;background:#fffaf0;color:#171410;font-size:11px}',
     '.xg-tag-search-options{position:absolute;z-index:4;top:calc(100% - 4px);left:12px;right:12px;max-height:170px;overflow:auto;border:1px solid #171410;background:white;box-shadow:4px 4px 0 #f3ce49}',
     '.xg-tag-search-options[hidden]{display:none}.xg-tag-search-options button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;border:0;border-bottom:1px solid rgba(23,20,16,.12);padding:8px 10px;background:white;color:#171410;text-align:left;cursor:pointer}',
     '.xg-tag-search-options button:hover{background:#fff3bf}.xg-tag-search-options small{color:#746c61}.xg-tag-search-empty{margin:0;padding:10px;color:#746c61;font-size:11px}',
