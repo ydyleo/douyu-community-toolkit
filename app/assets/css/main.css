@@ -320,8 +320,7 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-root-dropzone span { font-size: 10px; color: #8d6754; }
 @keyframes admin-dropzone-in { from { opacity: 0; transform: translateY(-5px); } }
 .admin-tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); align-items: start; gap: 20px 24px; }
-.admin-tag-node { position: relative; min-width: 0; transition: min-height .2s ease; }
-.admin-tag-node.expanded { min-height: 300px; z-index: 2; }
+.admin-tag-node { position: relative; min-width: 0; }
 .admin-tag-card { position: relative; min-height: 132px; padding: 20px; display: grid; align-content: center; gap: 5px; overflow: hidden; border: 1px solid var(--ink); background: white; box-shadow: 4px 4px 0 var(--yellow); cursor: grab; user-select: none; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
 .admin-tag-card:hover { transform: translateY(-2px); }
 .admin-tag-card.dragging { opacity: .45; cursor: grabbing; }
@@ -330,18 +329,15 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-tag-card span { color: #625a69; font-size: 12px; }
 .admin-tag-card small { margin-top: 7px; color: #8a818b; font-size: 10px; }
 .admin-tag-card .admin-tag-similar { margin-top: 8px; padding: 6px 8px; border-left: 3px solid var(--orange); background: #fff0eb; color: #8f3928; font-weight: 700; line-height: 1.4; }
-.admin-tag-merge-zone { position: absolute; top: -1px; right: -1px; width: 58px; height: 38px; display: grid; place-items: center; border: 1px solid var(--ink); background: var(--orange); color: white; font-size: 10px; font-weight: 800; letter-spacing: .08em; clip-path: polygon(30% 0, 100% 0, 100% 100%, 0 100%); }
-.admin-tag-merge-zone:hover { background: #d9502e; }
-.admin-tag-merge-zone.active { width: 72px; height: 48px; background: #c83d20; box-shadow: -3px 3px 0 var(--ink); }
-.admin-child-arc { position: absolute; inset: 120px 0 auto; height: 180px; pointer-events: none; }
-.admin-child-tag { --child-x: 0px; --child-y: 80px; position: absolute; top: 0; left: 50%; width: 112px; min-height: 62px; padding: 11px 10px; display: grid; place-content: center; gap: 3px; transform: translate(calc(-50% + var(--child-x)), var(--child-y)); border: 1px solid var(--ink); border-radius: 50%; background: #fffdf6; box-shadow: 3px 3px 0 #c6d79f; cursor: grab; pointer-events: auto; text-align: center; user-select: none; transition: opacity .15s ease, box-shadow .15s ease, transform .15s ease; animation: admin-child-open .2s ease-out both; }
-.admin-child-tag:hover { box-shadow: 5px 5px 0 #8fb850; }
+.admin-child-list { position: relative; margin: 17px 0 3px 18px; padding: 18px 12px 12px 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 9px; border: 1px solid var(--line); background: #f8f2e7; animation: admin-child-open .18s ease-out both; }
+.admin-child-list::before { content: ''; position: absolute; top: -18px; left: 22px; width: 44px; height: 22px; border-top: 2px solid var(--ink); border-left: 2px solid var(--ink); border-radius: 22px 0 0; }
+.admin-child-tag { min-width: 0; min-height: 52px; padding: 9px 10px; display: grid; align-content: center; gap: 3px; border: 1px solid var(--ink); background: white; box-shadow: 2px 2px 0 #c6d79f; cursor: grab; user-select: none; transition: opacity .15s ease, box-shadow .15s ease, transform .15s ease; }
+.admin-child-tag:hover { transform: translateY(-1px); box-shadow: 4px 4px 0 #8fb850; }
 .admin-child-tag.dragging { opacity: .4; }
-.admin-child-tag strong { max-width: 88px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-child-tag.drop-target { background: #eff8dc; box-shadow: 4px 4px 0 #7aa63e; }
+.admin-child-tag strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-child-tag span { color: #746d61; font-size: 9px; }
-.admin-child-tag button { position: absolute; top: -8px; right: -7px; width: 35px; height: 22px; padding: 0; border: 1px solid var(--ink); border-radius: 999px; background: var(--orange); color: white; font-size: 8px; font-weight: 800; }
-.admin-child-tag.merge-target, .admin-child-tag:has(button:hover) { box-shadow: 5px 5px 0 var(--orange); }
-@keyframes admin-child-open { from { opacity: 0; transform: translate(-50%, 24px) scale(.75); } }
+@keyframes admin-child-open { from { opacity: 0; transform: translateY(-6px); } }
 .admin-similarity-panel { margin-top: 14px; padding: 14px; display: grid; gap: 13px; border: 1px dashed var(--ink); background: #fffaf0; }
 .admin-similarity-panel p { margin: 0; }
 .admin-similarity-loading, .admin-similarity-error, .admin-similarity-clear { font-size: 12px; }
@@ -388,6 +384,12 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-tag-merge-preview { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 16px; border: 1px dashed var(--ink); background: var(--cream); }
 .admin-tag-merge-preview span { padding: 7px 10px; border: 1px solid var(--ink); border-radius: 999px; background: white; font-size: 12px; font-weight: 800; }
 .admin-merge-warning { margin: 0; padding: 11px 13px; border-left: 4px solid var(--orange); background: #fff0eb; color: #5d3127; font-size: 12px; }
+.admin-tag-choice { display: grid; gap: 16px; }
+.admin-tag-choice > p { margin: 0; color: #5f5862; font-size: 12px; text-align: center; }
+.admin-tag-choice > small { color: #9b4b38; font-size: 10px; text-align: center; }
+.admin-tag-choice-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.admin-tag-choice-actions button { min-height: 46px; }
+.admin-tag-choice-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .admin-editor-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .admin-reject-button { padding: 12px 22px; border: 1px solid var(--ink); background: transparent; cursor: pointer; }
 .admin-reject-button:hover { background: var(--orange); color: white; }
@@ -466,9 +468,8 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .admin-filter-toggle { justify-content: center; }
   .admin-root-dropzone { align-items: flex-start; flex-direction: column; }
   .admin-tag-grid { grid-template-columns: 1fr; }
-  .admin-tag-node.expanded { min-height: auto; }
-  .admin-child-arc { position: static; height: auto; margin: 16px 0 4px; display: flex; flex-wrap: wrap; gap: 10px; pointer-events: auto; }
-  .admin-child-tag { position: relative; top: auto; left: auto; width: auto; min-width: 100px; transform: none !important; border-radius: 999px; animation: none; }
+  .admin-child-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-tag-choice-actions { grid-template-columns: 1fr; }
   .admin-editor-backdrop { padding: 12px; place-items: start center; }
   .admin-editor-dialog { max-height: calc(100vh - 24px); }
   .admin-editor-actions { flex-direction: column-reverse; }

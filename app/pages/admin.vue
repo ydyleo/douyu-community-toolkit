@@ -78,7 +78,7 @@ const submissionSimilarities = ref<Record<string, SubmissionSimilarityState>>({}
 const draggedTag = ref('')
 const tagDropTarget = ref('')
 const expandedTagId = ref('')
-const tagMerge = ref<{ sourceId: string, targetId: string, source: string, target: string, name: string } | null>(null)
+const tagMerge = ref<{ sourceId: string, targetId: string, source: string, target: string, name: string, mode: 'choose' | 'merge' } | null>(null)
 const mergingTags = ref(false)
 const showAllEditorTags = ref(false)
 const showAllDraftTags = ref(false)
@@ -225,10 +225,12 @@ function tagNode(id: string) {
 }
 
 function childTagNodes(parentId: string) {
-  return tagNodes.value.filter((node) => node.parentId === parentId)
+  return tagNodes.value
+    .filter((node) => node.parentId === parentId)
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-CN'))
 }
 
-function openTagMerge(sourceId: string, targetId: string) {
+function openTagDropChoice(sourceId: string, targetId: string) {
   if (!sourceId || !targetId || sourceId === targetId) return
   const source = tagNode(sourceId)
   const target = tagNode(targetId)
@@ -239,6 +241,7 @@ function openTagMerge(sourceId: string, targetId: string) {
     source: source.name,
     target: target.name,
     name: target.count >= source.count ? target.name : source.name,
+    mode: 'choose',
   }
   draggedTag.value = ''
   tagDropTarget.value = ''
@@ -259,10 +262,9 @@ async function moveTagToParent(tagId: string, parentId: string | null) {
   }
 }
 
-function dropTag(event: DragEvent, targetId: string, mode: 'child' | 'merge') {
+function dropTag(event: DragEvent, targetId: string) {
   const sourceId = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
-  if (mode === 'merge') openTagMerge(sourceId, targetId)
-  else void moveTagToParent(sourceId, targetId)
+  openTagDropChoice(sourceId, targetId)
 }
 
 function dropTagToRoot(event: DragEvent) {
@@ -275,13 +277,15 @@ function toggleTagChildren(id: string) {
   expandedTagId.value = expandedTagId.value === id ? '' : id
 }
 
-function childArcStyle(index: number, total: number) {
-  const spread = Math.min(140, 54 + total * 18)
-  const start = (180 - spread) / 2
-  const angle = total <= 1 ? 90 : start + (spread * index) / (total - 1)
-  const radians = (angle * Math.PI) / 180
-  const radiusX = Math.max(105, 70 + total * 14)
-  return { '--child-x': `${Math.cos(radians) * radiusX}px`, '--child-y': `${56 + Math.sin(radians) * 92}px` }
+function chooseTagMerge() {
+  if (tagMerge.value) tagMerge.value.mode = 'merge'
+}
+
+function chooseTagParent() {
+  if (!tagMerge.value) return
+  const { sourceId, targetId } = tagMerge.value
+  tagMerge.value = null
+  void moveTagToParent(sourceId, targetId)
 }
 
 function tagUsageCount(name: string) {
@@ -1091,7 +1095,7 @@ onMounted(async () => {
 
         <section v-else-if="activePanel === 'tags'" class="admin-tag-manager">
           <div class="admin-list-toolbar">
-            <span>共 {{ tagNodes.length }} 个标签，当前显示 {{ visibleRootTagNodes.length }} 组。拖到卡片主体设为子标签，拖到右上角橙色区域合并。</span>
+            <span>共 {{ tagNodes.length }} 个标签，当前显示 {{ visibleRootTagNodes.length }} 组。把标签拖到另一张卡片上，再选择合并或设为子标签。</span>
             <div class="admin-toolbar-actions">
               <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
               <label class="admin-filter-toggle" :class="{ active: showOnlySimilarTags }">
@@ -1115,7 +1119,7 @@ onMounted(async () => {
             <span>把子标签拖到这里，它会恢复为独立标签</span>
           </div>
           <div v-if="!visibleRootTagNodes.length" class="admin-state">没有找到匹配标签。</div>
-          <div v-else class="admin-tag-grid">
+          <div v-else class="admin-tag-grid" @dragover.prevent @drop.prevent.self="dropTagToRoot">
             <div
               v-for="tag in visibleRootTagNodes"
               :key="tag.id"
@@ -1131,42 +1135,27 @@ onMounted(async () => {
                 @dragend="draggedTag = ''; tagDropTarget = ''"
                 @dragenter.prevent="tagDropTarget = tag.id"
                 @dragover.prevent
-                @drop.prevent="dropTag($event, tag.id, 'child')"
+                @drop.stop.prevent="dropTag($event, tag.id)"
               >
-                <button
-                  class="admin-tag-merge-zone"
-                  :class="{ active: tagDropTarget === `merge:${tag.id}` }"
-                  type="button"
-                  title="拖到这里合并标签"
-                  @click.stop
-                  @dragenter.stop.prevent="tagDropTarget = `merge:${tag.id}`"
-                  @dragover.stop.prevent
-                  @drop.stop.prevent="dropTag($event, tag.id, 'merge')"
-                >合并</button>
                 <strong>#{{ tag.name }}</strong>
                 <span>{{ tag.count }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
                 <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
                 <small v-else-if="childTagNodes(tag.id).length">点击{{ expandedTagId === tag.id ? '收起' : '展开' }}子标签</small>
-                <small v-else>拖到主体成为它的子标签</small>
+                <small v-else>把另一个标签拖到这里进行整理</small>
               </article>
-              <div v-if="expandedTagId === tag.id" class="admin-child-arc" aria-label="子标签">
+              <div v-if="expandedTagId === tag.id" class="admin-child-list" aria-label="子标签">
                 <article
-                  v-for="(child, index) in childTagNodes(tag.id)"
+                  v-for="child in childTagNodes(tag.id)"
                   :key="child.id"
                   class="admin-child-tag"
-                  :class="{ dragging: draggedTag === child.id, 'merge-target': tagDropTarget === `merge:${child.id}` }"
-                  :style="childArcStyle(index, childTagNodes(tag.id).length)"
+                  :class="{ dragging: draggedTag === child.id, 'drop-target': tagDropTarget === child.id && draggedTag !== child.id }"
                   draggable="true"
                   @dragstart.stop="startTagDrag($event, child.id)"
                   @dragend="draggedTag = ''; tagDropTarget = ''"
+                  @dragenter.stop.prevent="tagDropTarget = child.id"
+                  @dragover.stop.prevent
+                  @drop.stop.prevent="dropTag($event, child.id)"
                 >
-                  <button
-                    type="button"
-                    title="拖到这里合并标签"
-                    @dragenter.stop.prevent="tagDropTarget = `merge:${child.id}`"
-                    @dragover.stop.prevent
-                    @drop.stop.prevent="dropTag($event, child.id, 'merge')"
-                  >合并</button>
                   <strong>#{{ child.name }}</strong>
                   <span>{{ child.count }} 条</span>
                 </article>
@@ -1323,11 +1312,24 @@ onMounted(async () => {
           <div class="admin-editor-title">
             <div>
               <p class="eyebrow">标签管理</p>
-              <h2 id="tag-merge-title">合并两个标签</h2>
+              <h2 id="tag-merge-title">{{ tagMerge.mode === 'choose' ? '选择整理方式' : '合并两个标签' }}</h2>
             </div>
             <button type="button" aria-label="关闭合并窗口" @click="tagMerge = null">×</button>
           </div>
-          <form @submit.prevent="mergeTags">
+          <div v-if="tagMerge.mode === 'choose'" class="admin-tag-choice">
+            <div class="admin-tag-merge-preview">
+              <span>#{{ tagMerge.source }} · {{ tagUsageCount(tagMerge.source) }} 条</span>
+              <b>→</b>
+              <span>#{{ tagMerge.target }} · {{ tagUsageCount(tagMerge.target) }} 条</span>
+            </div>
+            <p>你想怎样整理这两个标签？所有操作都会同步更新相关烂梗。</p>
+            <div class="admin-tag-choice-actions">
+              <button class="ghost-button" type="button" :disabled="Boolean(tagNode(tagMerge.targetId)?.parentId)" @click="chooseTagParent">设为子标签</button>
+              <button class="primary-button" type="button" @click="chooseTagMerge">合并两个标签</button>
+            </div>
+            <small v-if="tagNode(tagMerge.targetId)?.parentId">目标本身是子标签，当前一层结构只能选择合并。</small>
+          </div>
+          <form v-else @submit.prevent="mergeTags">
             <div class="admin-tag-merge-preview">
               <span>#{{ tagMerge.source }} · {{ tagUsageCount(tagMerge.source) }} 条</span>
               <b>＋</b>
