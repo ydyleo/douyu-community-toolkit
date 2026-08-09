@@ -41,6 +41,9 @@ const {
   submitSticker,
 } = useMediaLibrary()
 const api = useApi()
+const runtimeConfig = useRuntimeConfig()
+const apiBase = String(runtimeConfig.public.apiBase || '').replace(/\/$/, '')
+const userscriptInstallUrl = `${apiBase}/api/analytics/userscript-install`
 const audioPlayer = ref<HTMLAudioElement | null>(null)
 const selectedTrackIndex = ref(0)
 const musicPanelOpen = ref(true)
@@ -240,6 +243,7 @@ async function submitStickerDraft() {
 }
 
 onMounted(() => {
+  void api('/api/analytics/visit', { method: 'POST' }).catch(() => undefined)
   musicEnabled.value = localStorage.getItem('xiaogui-bgm') !== 'off'
   if (musicEnabled.value) void playMusic()
   void api<{ items: SubmissionTagOption[] }>('/api/tags', { query: { limit: 100 } })
@@ -448,7 +452,7 @@ onBeforeUnmount(() => {
           <p class="eyebrow">直播间烂梗助手</p>
           <h2>把烂梗库<br />搬进直播间。</h2>
           <p>打开任意斗鱼直播间都能使用。搜索烂梗后可以复制、填入弹幕框，或带 3 秒冷却地一键发送。</p>
-          <a class="primary-button" href="/userscripts/nishuixiaogui-meme-helper.user.js" target="_blank">安装小龟烂梗助手 <span>↗</span></a>
+          <a class="primary-button" :href="userscriptInstallUrl" target="_blank">安装小龟烂梗助手 <span>↗</span></a>
           <details v-if="userscriptRelease" class="helper-release">
             <summary>
               <span class="helper-release-current">

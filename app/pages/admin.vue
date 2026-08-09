@@ -9,6 +9,7 @@ import type {
   MediaAsset,
   Meme,
   SubmissionStatus,
+  TrafficAnalytics,
 } from '#shared/types/meme'
 
 useSeoMeta({
@@ -16,7 +17,7 @@ useSeoMeta({
   robots: 'noindex, nofollow',
 })
 
-type Panel = 'joke-review' | 'jokes' | 'tags' | 'sticker-review' | 'stickers' | 'bgm' | 'security'
+type Panel = 'analytics' | 'joke-review' | 'jokes' | 'tags' | 'sticker-review' | 'stickers' | 'bgm' | 'security'
 type JokeEditor = {
   kind: 'submission' | 'published'
   id: string
@@ -38,6 +39,7 @@ type SubmissionSimilarityState = {
 type TagTreeNode = { id: string, name: string, parentId: string | null, count: number }
 
 const panelLabels: Record<Panel, string> = {
+  analytics: '访问统计',
   'joke-review': '烂梗审核',
   jokes: '烂梗管理',
   tags: '标签管理',
@@ -45,6 +47,16 @@ const panelLabels: Record<Panel, string> = {
   stickers: '表情包管理',
   bgm: 'BGM 管理',
   security: '账号与安全',
+}
+const panelDescriptions: Record<Panel, string> = {
+  analytics: '查看网站访问趋势和小龟助手安装入口的使用情况。',
+  'joke-review': '审核水友投稿的烂梗。',
+  jokes: '添加、编辑和删除已经公开的烂梗。',
+  tags: '维护标签名称及父子分类。',
+  'sticker-review': '审核水友投稿的表情包。',
+  stickers: '维护已经公开的表情包。',
+  bgm: '上传、排序和管理网站音乐。',
+  security: '管理账号、密码和操作记录。',
 }
 const statusLabels: Record<SubmissionStatus, string> = {
   pending: '待审核',
@@ -62,13 +74,16 @@ const currentUser = ref<AdminSessionUser | null>(null)
 const checkingSession = ref(true)
 const loading = ref(false)
 const processingId = ref('')
-const activePanel = ref<Panel>('joke-review')
+const activePanel = ref<Panel>('analytics')
 const status = ref<SubmissionStatus>('pending')
 const jokeSubmissions = ref<AdminJokeSubmission[]>([])
 const jokes = ref<Meme[]>([])
 const mediaItems = ref<MediaAsset[]>([])
 const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
+const analytics = ref<TrafficAnalytics | null>(null)
+const analyticsRange = ref<7 | 30 | 90>(30)
+const analyticsRanges = [7, 30, 90] as const
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
 const tagNodes = ref<TagTreeNode[]>([])
 const tagAdminQuery = ref('')
@@ -153,6 +168,50 @@ const visibleRootTagNodes = computed(() => {
       || left.name.localeCompare(right.name, 'zh-CN')
   })
 })
+const analyticsChart = computed(() => {
+  const width = 760
+  const height = 280
+  const left = 46
+  const right = 18
+  const top = 18
+  const bottom = 38
+  const points = analytics.value?.points ?? []
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.visits, point.visitors, point.userscriptInstalls]))
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const position = (value: number, index: number) => ({
+    x: left + (points.length <= 1 ? 0 : index / (points.length - 1) * plotWidth),
+    y: top + plotHeight - value / maxValue * plotHeight,
+  })
+  const mapped = points.map((point, index) => ({
+    ...point,
+    ...position(point.visits, index),
+    visitorY: position(point.visitors, index).y,
+    installY: position(point.userscriptInstalls, index).y,
+  }))
+  const line = (key: 'y' | 'visitorY' | 'installY') => mapped.map((point) => `${point.x},${point[key]}`).join(' ')
+  const labelIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].filter((index) => index >= 0)
+  return {
+    width,
+    height,
+    left,
+    right,
+    top,
+    bottom,
+    plotHeight,
+    maxValue,
+    points: mapped,
+    visitsLine: line('y'),
+    visitorsLine: line('visitorY'),
+    installsLine: line('installY'),
+    dateLabels: labelIndexes.map((index) => ({ index, x: mapped[index]?.x ?? left, date: points[index]?.date ?? '' })),
+    grid: [0, .25, .5, .75, 1].map((ratio) => ({
+      y: top + plotHeight - ratio * plotHeight,
+      value: Math.round(maxValue * ratio),
+    })),
+  }
+})
+const analyticsRows = computed(() => [...(analytics.value?.points ?? [])].reverse())
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -526,6 +585,15 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+function formatAnalyticsDate(value: string) {
+  const [, month = '', day = ''] = value.split('-')
+  return `${month}/${day}`
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat('zh-CN').format(value)
+}
+
 function assetUrl(value: string) {
   return value.startsWith('/uploads/') && apiBase ? `${apiBase}${value}` : value
 }
@@ -576,7 +644,11 @@ async function loadCurrentPanel() {
   loading.value = true
   error.value = ''
   try {
-    if (activePanel.value === 'security') {
+    if (activePanel.value === 'analytics') {
+      analytics.value = await api<TrafficAnalytics>('/api/admin/analytics', {
+        query: { days: analyticsRange.value },
+      })
+    } else if (activePanel.value === 'security') {
       if (currentUser.value?.role === 'owner') {
         const [usersResult, logsResult] = await Promise.all([
           api<{ items: AdminManagedUser[] }>('/api/admin/users'),
@@ -627,6 +699,12 @@ async function loadCurrentPanel() {
   } finally {
     loading.value = false
   }
+}
+
+async function changeAnalyticsRange(days: 7 | 30 | 90) {
+  if (analyticsRange.value === days && analytics.value) return
+  analyticsRange.value = days
+  await loadCurrentPanel()
 }
 
 async function login() {
@@ -1053,7 +1131,7 @@ onBeforeUnmount(() => {
           <div>
             <p class="eyebrow">内容管理</p>
             <h1>{{ panelLabels[activePanel] }}</h1>
-            <p>审核粉丝投稿，也可以直接维护已经公开的内容。</p>
+            <p>{{ panelDescriptions[activePanel] }}</p>
           </div>
         </section>
 
@@ -1145,6 +1223,85 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="loading" class="admin-state">正在读取内容…</section>
+
+        <section v-else-if="activePanel === 'analytics' && analytics" class="admin-analytics">
+          <div class="admin-analytics-cards">
+            <article><span>今日访问量</span><strong>{{ formatCount(analytics.summary.todayVisits) }}</strong><small>今天打开首页的次数</small></article>
+            <article><span>今日独立访客</span><strong>{{ formatCount(analytics.summary.todayVisitors) }}</strong><small>按匿名 IP 估算</small></article>
+            <article><span>今日助手安装点击</span><strong>{{ formatCount(analytics.summary.todayUserscriptInstalls) }}</strong><small>同一匿名 IP 当天只计一次</small></article>
+            <article><span>累计访问量</span><strong>{{ formatCount(analytics.summary.totalVisits) }}</strong><small>从统计功能上线起累计</small></article>
+            <article><span>累计助手安装点击</span><strong>{{ formatCount(analytics.summary.totalUserscriptInstalls) }}</strong><small>不包含油猴自动更新检查</small></article>
+            <article><span>单日最高访问量</span><strong>{{ formatCount(analytics.summary.peakDailyVisits) }}</strong><small>历史最高的一天</small></article>
+          </div>
+
+          <section class="admin-analytics-chart-card">
+            <div class="admin-analytics-heading">
+              <div>
+                <h2>访问趋势</h2>
+                <p>折线会随时间范围重新绘制；移动到圆点可查看当天数量。</p>
+              </div>
+              <div class="admin-analytics-ranges" aria-label="统计时间范围">
+                <button
+                  v-for="days in analyticsRanges"
+                  :key="days"
+                  type="button"
+                  :class="{ active: analyticsRange === days }"
+                  @click="changeAnalyticsRange(days)"
+                >近 {{ days }} 天</button>
+              </div>
+            </div>
+            <div class="admin-analytics-legend" aria-hidden="true">
+              <span class="visits">访问量</span>
+              <span class="visitors">独立访客</span>
+              <span class="installs">助手安装点击</span>
+            </div>
+            <div class="admin-analytics-chart-scroll">
+              <svg
+                :key="analyticsRange"
+                class="admin-analytics-chart"
+                :viewBox="`0 0 ${analyticsChart.width} ${analyticsChart.height}`"
+                role="img"
+                :aria-label="`近 ${analyticsRange} 天访问趋势图`"
+              >
+                <g class="chart-grid">
+                  <g v-for="tick in analyticsChart.grid" :key="tick.y">
+                    <line :x1="analyticsChart.left" :x2="analyticsChart.width - analyticsChart.right" :y1="tick.y" :y2="tick.y" />
+                    <text :x="analyticsChart.left - 8" :y="tick.y + 4">{{ tick.value }}</text>
+                  </g>
+                </g>
+                <polyline class="chart-line visits" :points="analyticsChart.visitsLine" />
+                <polyline class="chart-line visitors" :points="analyticsChart.visitorsLine" />
+                <polyline class="chart-line installs" :points="analyticsChart.installsLine" />
+                <g v-for="point in analyticsChart.points" :key="point.date" class="chart-points">
+                  <circle class="visits" :cx="point.x" :cy="point.y" r="3.5"><title>{{ point.date }}：访问量 {{ point.visits }}</title></circle>
+                  <circle class="visitors" :cx="point.x" :cy="point.visitorY" r="3.5"><title>{{ point.date }}：独立访客 {{ point.visitors }}</title></circle>
+                  <circle class="installs" :cx="point.x" :cy="point.installY" r="3.5"><title>{{ point.date }}：助手安装点击 {{ point.userscriptInstalls }}</title></circle>
+                </g>
+                <g class="chart-dates">
+                  <text v-for="label in analyticsChart.dateLabels" :key="label.index" :x="label.x" :y="analyticsChart.height - 10">{{ formatAnalyticsDate(label.date) }}</text>
+                </g>
+              </svg>
+            </div>
+          </section>
+
+          <section class="admin-analytics-table-card">
+            <h2>每日数据</h2>
+            <div class="admin-analytics-table-scroll">
+              <table>
+                <thead><tr><th>日期</th><th>访问量</th><th>独立访客</th><th>助手安装点击</th></tr></thead>
+                <tbody>
+                  <tr v-for="point in analyticsRows" :key="point.date">
+                    <td>{{ point.date }}</td>
+                    <td>{{ formatCount(point.visits) }}</td>
+                    <td>{{ formatCount(point.visitors) }}</td>
+                    <td>{{ formatCount(point.userscriptInstalls) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <p class="admin-analytics-privacy">隐私说明：系统不保存原始 IP，只保存每天重新生成的匿名标识；独立访客是估算值，不等同于精确人数。</p>
+        </section>
 
         <section v-else-if="activePanel === 'joke-review'">
           <div v-if="!jokeSubmissions.length" class="admin-state">当前没有{{ statusLabels[status] }}的烂梗投稿。</div>

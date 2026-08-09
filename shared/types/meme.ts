@@ -90,3 +90,21 @@ export type AdminAuditLog = {
   details: Record<string, unknown>
   createdAt: string
 }
+
+export type TrafficAnalytics = {
+  range: 7 | 30 | 90
+  summary: {
+    todayVisits: number
+    todayVisitors: number
+    totalVisits: number
+    peakDailyVisits: number
+    todayUserscriptInstalls: number
+    totalUserscriptInstalls: number
+  }
+  points: Array<{
+    date: string
+    visits: number
+    visitors: number
+    userscriptInstalls: number
+  }>
+}
