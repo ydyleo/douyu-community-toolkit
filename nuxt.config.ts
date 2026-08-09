@@ -20,6 +20,9 @@ export default defineNuxtConfig({
   nitro: {
     compressPublicAssets: true,
     preset: 'static',
+    prerender: {
+      ignore: ['/api/analytics/userscript-install'],
+    },
   },
   typescript: {
     strict: true,
