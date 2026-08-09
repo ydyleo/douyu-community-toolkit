@@ -83,6 +83,7 @@ const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const analytics = ref<TrafficAnalytics | null>(null)
 const analyticsRange = ref<7 | 30 | 90>(30)
+const analyticsRangeLoading = ref(false)
 const analyticsRanges = [7, 30, 90] as const
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
 const tagNodes = ref<TagTreeNode[]>([])
@@ -590,6 +591,11 @@ function formatAnalyticsDate(value: string) {
   return `${month}/${day}`
 }
 
+function formatAnalyticsFullDate(value: string) {
+  const [year = '', month = '', day = ''] = value.split('-')
+  return `${year}年${Number(month)}月${Number(day)}日`
+}
+
 function formatCount(value: number) {
   return new Intl.NumberFormat('zh-CN').format(value)
 }
@@ -702,9 +708,19 @@ async function loadCurrentPanel() {
 }
 
 async function changeAnalyticsRange(days: 7 | 30 | 90) {
-  if (analyticsRange.value === days && analytics.value) return
+  if (analyticsRangeLoading.value || (analyticsRange.value === days && analytics.value)) return
+  const previousRange = analyticsRange.value
   analyticsRange.value = days
-  await loadCurrentPanel()
+  analyticsRangeLoading.value = true
+  error.value = ''
+  try {
+    analytics.value = await api<TrafficAnalytics>('/api/admin/analytics', { query: { days } })
+  } catch (caught) {
+    analyticsRange.value = previousRange
+    error.value = readError(caught)
+  } finally {
+    analyticsRangeLoading.value = false
+  }
 }
 
 async function login() {
@@ -1234,7 +1250,7 @@ onBeforeUnmount(() => {
             <article><span>单日最高访问量</span><strong>{{ formatCount(analytics.summary.peakDailyVisits) }}</strong><small>历史最高的一天</small></article>
           </div>
 
-          <section class="admin-analytics-chart-card">
+          <section class="admin-analytics-chart-card" :aria-busy="analyticsRangeLoading">
             <div class="admin-analytics-heading">
               <div>
                 <h2>访问趋势</h2>
@@ -1246,6 +1262,7 @@ onBeforeUnmount(() => {
                   :key="days"
                   type="button"
                   :class="{ active: analyticsRange === days }"
+                  :disabled="analyticsRangeLoading"
                   @click="changeAnalyticsRange(days)"
                 >近 {{ days }} 天</button>
               </div>
@@ -1285,7 +1302,10 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="admin-analytics-table-card">
-            <h2>每日数据</h2>
+            <div class="admin-analytics-table-heading">
+              <h2>每日数据</h2>
+              <small>从 {{ formatAnalyticsFullDate(analytics.startedAt) }} 开始统计</small>
+            </div>
             <div class="admin-analytics-table-scroll">
               <table>
                 <thead><tr><th>日期</th><th>访问量</th><th>独立访客</th><th>助手安装点击</th></tr></thead>

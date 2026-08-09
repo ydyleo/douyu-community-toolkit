@@ -93,6 +93,7 @@ export type AdminAuditLog = {
 
 export type TrafficAnalytics = {
   range: 7 | 30 | 90
+  startedAt: string
   summary: {
     todayVisits: number
     todayVisitors: number
