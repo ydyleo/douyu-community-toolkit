@@ -155,7 +155,7 @@ h1 span { color: var(--orange); }
 .emoji-info a { width: fit-content; padding-bottom: 3px; border-bottom: 2px solid var(--ink); font-size: 13px; font-weight: 800; }
 .emoji-info a:hover { color: var(--orange); border-color: var(--orange); }
 
-.helper-section { padding: 104px clamp(22px, 8vw, 130px); display: grid; grid-template-columns: minmax(0, .9fr) minmax(440px, 1.1fr); gap: clamp(60px, 9vw, 140px); align-items: center; background: var(--blue); color: white; border-top: 1px solid var(--ink); }
+.helper-section { padding: 104px clamp(22px, 8vw, 130px); display: grid; grid-template-columns: minmax(0, .9fr) minmax(440px, 1.1fr); gap: clamp(60px, 9vw, 140px); align-items: start; background: var(--blue); color: white; border-top: 1px solid var(--ink); }
 .helper-intro h2 { margin: 0 0 28px; font-size: clamp(46px, 6vw, 88px); line-height: .95; letter-spacing: -.065em; }
 .helper-intro > p:not(.eyebrow) { max-width: 560px; color: rgba(255,255,255,.78); line-height: 1.85; }
 .helper-intro .primary-button { margin-top: 18px; background: var(--yellow); border-color: var(--ink); color: var(--ink); box-shadow: 7px 7px 0 var(--ink); }
