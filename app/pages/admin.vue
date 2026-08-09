@@ -127,13 +127,30 @@ const similarCandidateTagCount = computed(() => tagSuggestions.value.filter((tag
 const visibleRootTagNodes = computed(() => {
   const query = tagAdminQuery.value.trim().toLocaleLowerCase('zh-CN')
   const roots = tagNodes.value.filter((node) => !node.parentId)
+  const childrenByParent = new Map<string, TagTreeNode[]>()
+  for (const node of tagNodes.value) {
+    if (!node.parentId) continue
+    const children = childrenByParent.get(node.parentId) ?? []
+    children.push(node)
+    childrenByParent.set(node.parentId, children)
+  }
   return roots.filter((root) => {
-    const children = tagNodes.value.filter((node) => node.parentId === root.id)
+    const children = childrenByParent.get(root.id) ?? []
     const matchesQuery = !query || root.name.toLocaleLowerCase('zh-CN').includes(query)
       || children.some((child) => child.name.toLocaleLowerCase('zh-CN').includes(query))
     const matchesSimilar = !showOnlySimilarTags.value || similarTagNames(root.name).length
       || children.some((child) => similarTagNames(child.name).length)
     return matchesQuery && matchesSimilar
+  }).sort((left, right) => {
+    const leftChildren = childrenByParent.get(left.id) ?? []
+    const rightChildren = childrenByParent.get(right.id) ?? []
+    const leftIsParent = leftChildren.length > 0
+    const rightIsParent = rightChildren.length > 0
+    const leftCount = leftIsParent ? leftChildren.reduce((sum, child) => sum + child.count, 0) : left.count
+    const rightCount = rightIsParent ? rightChildren.reduce((sum, child) => sum + child.count, 0) : right.count
+    return Number(rightIsParent) - Number(leftIsParent)
+      || rightCount - leftCount
+      || left.name.localeCompare(right.name, 'zh-CN')
   })
 })
 
@@ -278,6 +295,11 @@ function childTagNodes(parentId: string) {
   return tagNodes.value
     .filter((node) => node.parentId === parentId)
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-CN'))
+}
+
+function rootTagUsageCount(item: TagTreeNode) {
+  const children = childTagNodes(item.id)
+  return children.length ? children.reduce((sum, child) => sum + child.count, 0) : item.count
 }
 
 function openTagDropChoice(sourceId: string, targetId: string) {
@@ -1264,7 +1286,7 @@ onBeforeUnmount(() => {
                   @click.stop="deleteManagedTag(tag)"
                 >{{ deletingTagId === tag.id ? '删除中' : '删除' }}</button>
                 <strong><i v-if="childTagNodes(tag.id).length" class="admin-parent-star" aria-hidden="true">★</i>#{{ tag.name }}</strong>
-                <span>{{ tag.count }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
+                <span>{{ rootTagUsageCount(tag) }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
                 <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
                 <small v-else-if="childTagNodes(tag.id).length">点击{{ expandedTagId === tag.id ? '收起' : '展开' }}子标签</small>
                 <small v-else>把另一个标签拖到这里进行整理</small>
