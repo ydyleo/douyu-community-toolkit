@@ -401,8 +401,10 @@ async function moveTagToParent(tagId: string, parentId: string | null) {
 async function deleteManagedTag(item: TagTreeNode) {
   if (deletingTagId.value) return
   const childCount = childTagNodes(item.id).length
-  const childNotice = childCount ? `\n它的 ${childCount} 个子标签会恢复为独立标签。` : ''
-  if (!window.confirm(`确定删除标签 #${item.name} 吗？\n它会从所有相关烂梗和投稿中移除。${childNotice}`)) return
+  const confirmation = childCount
+    ? `确定删除父标签 #${item.name} 吗？\n只会删除父标签本身；它的 ${childCount} 个子标签会恢复为独立标签，子标签及其关联烂梗不会被删除。`
+    : `确定删除标签 #${item.name} 吗？\n它会从所有相关烂梗和投稿中移除。`
+  if (!window.confirm(confirmation)) return
   const scrollLeft = window.scrollX
   const scrollTop = window.scrollY
   deletingTagId.value = item.id
@@ -417,7 +419,9 @@ async function deleteManagedTag(item: TagTreeNode) {
       expandedTagId.value = ''
     }
     notifyMemeArchiveUpdated()
-    message.value = `已删除 #${item.name}，同步更新 ${result.updatedJokes} 条烂梗和 ${result.updatedSubmissions} 条投稿。`
+    message.value = childCount
+      ? `已删除父标签 #${item.name}，${childCount} 个子标签已恢复为独立标签。`
+      : `已删除 #${item.name}，同步更新 ${result.updatedJokes} 条烂梗和 ${result.updatedSubmissions} 条投稿。`
     await nextTick()
     window.scrollTo(scrollLeft, scrollTop)
   } catch (caught) {
