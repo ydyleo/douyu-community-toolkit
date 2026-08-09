@@ -303,13 +303,6 @@ function chooseTagParent() {
   void moveTagToParent(sourceId, targetId)
 }
 
-function childArcStyle(index: number, total: number) {
-  if (total <= 1) return { '--child-y': '0px' }
-  const progress = index / (total - 1)
-  const offset = 18 - Math.sin(progress * Math.PI) * 18
-  return { '--child-y': `${Math.round(offset)}px` }
-}
-
 function tagUsageCount(name: string) {
   return tagSuggestions.value.find((tag) => tag.name === name)?.count ?? 0
 }
@@ -1172,12 +1165,11 @@ onBeforeUnmount(() => {
               </article>
               <div v-if="expandedTagId === tag.id && childTagNodes(tag.id).length" class="admin-child-list" aria-label="子标签">
                 <article
-                  v-for="(child, index) in childTagNodes(tag.id)"
+                  v-for="child in childTagNodes(tag.id)"
                   :key="child.id"
                   class="admin-child-tag"
                   data-tag-drop-target
                   :class="{ dragging: draggedTag === child.id, 'drop-target': tagDropTarget === child.id && draggedTag !== child.id }"
-                  :style="childArcStyle(index, childTagNodes(tag.id).length)"
                   draggable="true"
                   @dragstart="startTagDrag($event, child.id)"
                   @dragend="draggedTag = ''; tagDropTarget = ''"
