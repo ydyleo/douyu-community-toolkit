@@ -35,6 +35,7 @@ type SubmissionSimilarityState = {
   matches: SimilarJoke[]
   tagMatches: SimilarTagGroup[]
 }
+type TagTreeNode = { id: string, name: string, parentId: string | null, count: number }
 
 const panelLabels: Record<Panel, string> = {
   'joke-review': '烂梗审核',
@@ -69,13 +70,15 @@ const mediaItems = ref<MediaAsset[]>([])
 const adminUsers = ref<AdminManagedUser[]>([])
 const auditLogs = ref<AdminAuditLog[]>([])
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
+const tagNodes = ref<TagTreeNode[]>([])
 const tagAdminQuery = ref('')
 const jokeAdminQuery = ref('')
 const showOnlySimilarTags = ref(false)
 const submissionSimilarities = ref<Record<string, SubmissionSimilarityState>>({})
 const draggedTag = ref('')
 const tagDropTarget = ref('')
-const tagMerge = ref<{ source: string, target: string, name: string } | null>(null)
+const expandedTagId = ref('')
+const tagMerge = ref<{ sourceId: string, targetId: string, source: string, target: string, name: string } | null>(null)
 const mergingTags = ref(false)
 const showAllEditorTags = ref(false)
 const showAllDraftTags = ref(false)
@@ -117,6 +120,18 @@ const managedTags = computed(() => {
   return showOnlySimilarTags.value ? items.filter((tag) => similarTagNames(tag.name).length) : items
 })
 const similarCandidateTagCount = computed(() => tagSuggestions.value.filter((tag) => similarTagNames(tag.name).length).length)
+const visibleRootTagNodes = computed(() => {
+  const query = tagAdminQuery.value.trim().toLocaleLowerCase('zh-CN')
+  const roots = tagNodes.value.filter((node) => !node.parentId)
+  return roots.filter((root) => {
+    const children = tagNodes.value.filter((node) => node.parentId === root.id)
+    const matchesQuery = !query || root.name.toLocaleLowerCase('zh-CN').includes(query)
+      || children.some((child) => child.name.toLocaleLowerCase('zh-CN').includes(query))
+    const matchesSimilar = !showOnlySimilarTags.value || similarTagNames(root.name).length
+      || children.some((child) => similarTagNames(child.name).length)
+    return matchesQuery && matchesSimilar
+  })
+})
 
 function toggleUntaggedFilter() {
   showOnlyUntagged.value = !showOnlyUntagged.value
@@ -199,24 +214,74 @@ function addEditorTag() {
   newEditorTag.value = ''
 }
 
-function startTagDrag(event: DragEvent, name: string) {
-  draggedTag.value = name
-  event.dataTransfer?.setData('text/plain', name)
+function startTagDrag(event: DragEvent, id: string) {
+  draggedTag.value = id
+  event.dataTransfer?.setData('text/plain', id)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 
-function openTagMerge(source: string, target: string) {
-  if (!source || !target || source === target) return
-  const targetCount = tagSuggestions.value.find((tag) => tag.name === target)?.count ?? 0
-  const sourceCount = tagSuggestions.value.find((tag) => tag.name === source)?.count ?? 0
-  tagMerge.value = { source, target, name: targetCount >= sourceCount ? target : source }
+function tagNode(id: string) {
+  return tagNodes.value.find((node) => node.id === id)
+}
+
+function childTagNodes(parentId: string) {
+  return tagNodes.value.filter((node) => node.parentId === parentId)
+}
+
+function openTagMerge(sourceId: string, targetId: string) {
+  if (!sourceId || !targetId || sourceId === targetId) return
+  const source = tagNode(sourceId)
+  const target = tagNode(targetId)
+  if (!source || !target) return
+  tagMerge.value = {
+    sourceId,
+    targetId,
+    source: source.name,
+    target: target.name,
+    name: target.count >= source.count ? target.name : source.name,
+  }
   draggedTag.value = ''
   tagDropTarget.value = ''
 }
 
-function dropTag(event: DragEvent, target: string) {
-  const source = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
-  openTagMerge(source, target)
+async function moveTagToParent(tagId: string, parentId: string | null) {
+  if (!tagId || tagId === parentId) return
+  clearFeedback()
+  try {
+    await api(`/api/admin/tags/${encodeURIComponent(tagId)}/move`, { method: 'POST', body: { parentId } })
+    message.value = parentId ? '子标签关系已更新。' : '标签已移到顶层。'
+    await loadCurrentPanel()
+  } catch (caught) {
+    error.value = readError(caught)
+  } finally {
+    draggedTag.value = ''
+    tagDropTarget.value = ''
+  }
+}
+
+function dropTag(event: DragEvent, targetId: string, mode: 'child' | 'merge') {
+  const sourceId = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
+  if (mode === 'merge') openTagMerge(sourceId, targetId)
+  else void moveTagToParent(sourceId, targetId)
+}
+
+function dropTagToRoot(event: DragEvent) {
+  const sourceId = draggedTag.value || event.dataTransfer?.getData('text/plain') || ''
+  void moveTagToParent(sourceId, null)
+}
+
+function toggleTagChildren(id: string) {
+  if (!childTagNodes(id).length) return
+  expandedTagId.value = expandedTagId.value === id ? '' : id
+}
+
+function childArcStyle(index: number, total: number) {
+  const spread = Math.min(140, 54 + total * 18)
+  const start = (180 - spread) / 2
+  const angle = total <= 1 ? 90 : start + (spread * index) / (total - 1)
+  const radians = (angle * Math.PI) / 180
+  const radiusX = Math.max(105, 70 + total * 14)
+  return { '--child-x': `${Math.cos(radians) * radiusX}px`, '--child-y': `${56 + Math.sin(radians) * 92}px` }
 }
 
 function tagUsageCount(name: string) {
@@ -296,10 +361,11 @@ async function mergeTags() {
   mergingTags.value = true
   clearFeedback()
   try {
-    const result = await api<{ targetTag: string, updatedJokes: number, updatedSubmissions: number }>('/api/admin/tags/merge', {
+    const result = await api<{ targetTag: string, updatedJokes: number, updatedSubmissions: number }>('/api/admin/tags/merge-nodes', {
       method: 'POST',
       body: {
-        sourceTags: [tagMerge.value.source, tagMerge.value.target],
+        sourceId: tagMerge.value.sourceId,
+        targetId: tagMerge.value.targetId,
         targetTag,
       },
     })
@@ -352,6 +418,7 @@ const auditActionLabels: Record<string, string> = {
   revoke_sessions: '强制退出',
   change_password: '修改密码',
   merge: '合并',
+  move: '移动',
 }
 
 const auditEntityLabels: Record<string, string> = {
@@ -399,8 +466,12 @@ async function loadCurrentPanel() {
       jokes.value = result.items
       tagSuggestions.value = tagsResult.items
     } else if (activePanel.value === 'tags') {
-      const tagsResult = await api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 500 } })
-      tagSuggestions.value = tagsResult.items
+      const result = await api<{ items: TagTreeNode[] }>('/api/admin/tags/tree')
+      tagNodes.value = result.items
+      tagSuggestions.value = result.items.map(({ name, count }) => ({ name, count }))
+      if (expandedTagId.value && !result.items.some((item) => item.id === expandedTagId.value && !item.parentId)) {
+        expandedTagId.value = ''
+      }
     } else {
       const kind = activePanel.value === 'bgm' ? 'bgm' : 'sticker'
       const mediaStatus = activePanel.value === 'sticker-review' ? status.value : 'approved'
@@ -1020,7 +1091,7 @@ onMounted(async () => {
 
         <section v-else-if="activePanel === 'tags'" class="admin-tag-manager">
           <div class="admin-list-toolbar">
-            <span>共 {{ tagSuggestions.length }} 个标签，当前匹配 {{ managedTags.length }} 个。把一个标签拖到另一个标签上即可准备合并。</span>
+            <span>共 {{ tagNodes.length }} 个标签，当前显示 {{ visibleRootTagNodes.length }} 组。拖到卡片主体设为子标签，拖到右上角橙色区域合并。</span>
             <div class="admin-toolbar-actions">
               <input v-model="tagAdminQuery" type="search" maxlength="24" placeholder="搜索标签" aria-label="搜索后台标签" />
               <label class="admin-filter-toggle" :class="{ active: showOnlySimilarTags }">
@@ -1033,25 +1104,74 @@ onMounted(async () => {
               </label>
             </div>
           </div>
-          <div v-if="!managedTags.length" class="admin-state">没有找到匹配标签。</div>
+          <div
+            v-if="draggedTag"
+            class="admin-root-dropzone"
+            @dragenter.prevent="tagDropTarget = 'root'"
+            @dragover.prevent
+            @drop.prevent="dropTagToRoot"
+          >
+            <strong>移到顶层</strong>
+            <span>把子标签拖到这里，它会恢复为独立标签</span>
+          </div>
+          <div v-if="!visibleRootTagNodes.length" class="admin-state">没有找到匹配标签。</div>
           <div v-else class="admin-tag-grid">
-            <article
-              v-for="tag in managedTags"
-              :key="tag.name"
-              class="admin-tag-card"
-              :class="{ dragging: draggedTag === tag.name, 'drop-target': tagDropTarget === tag.name && draggedTag !== tag.name }"
-              draggable="true"
-              @dragstart="startTagDrag($event, tag.name)"
-              @dragend="draggedTag = ''; tagDropTarget = ''"
-              @dragenter.prevent="tagDropTarget = tag.name"
-              @dragover.prevent
-              @drop.prevent="dropTag($event, tag.name)"
+            <div
+              v-for="tag in visibleRootTagNodes"
+              :key="tag.id"
+              class="admin-tag-node"
+              :class="{ expanded: expandedTagId === tag.id }"
             >
-              <strong>#{{ tag.name }}</strong>
-              <span>{{ tag.count }} 条烂梗</span>
-              <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
-              <small v-else>拖到另一个标签上合并</small>
-            </article>
+              <article
+                class="admin-tag-card"
+                :class="{ dragging: draggedTag === tag.id, 'drop-target': tagDropTarget === tag.id && draggedTag !== tag.id }"
+                draggable="true"
+                @click="toggleTagChildren(tag.id)"
+                @dragstart="startTagDrag($event, tag.id)"
+                @dragend="draggedTag = ''; tagDropTarget = ''"
+                @dragenter.prevent="tagDropTarget = tag.id"
+                @dragover.prevent
+                @drop.prevent="dropTag($event, tag.id, 'child')"
+              >
+                <button
+                  class="admin-tag-merge-zone"
+                  :class="{ active: tagDropTarget === `merge:${tag.id}` }"
+                  type="button"
+                  title="拖到这里合并标签"
+                  @click.stop
+                  @dragenter.stop.prevent="tagDropTarget = `merge:${tag.id}`"
+                  @dragover.stop.prevent
+                  @drop.stop.prevent="dropTag($event, tag.id, 'merge')"
+                >合并</button>
+                <strong>#{{ tag.name }}</strong>
+                <span>{{ tag.count }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
+                <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
+                <small v-else-if="childTagNodes(tag.id).length">点击{{ expandedTagId === tag.id ? '收起' : '展开' }}子标签</small>
+                <small v-else>拖到主体成为它的子标签</small>
+              </article>
+              <div v-if="expandedTagId === tag.id" class="admin-child-arc" aria-label="子标签">
+                <article
+                  v-for="(child, index) in childTagNodes(tag.id)"
+                  :key="child.id"
+                  class="admin-child-tag"
+                  :class="{ dragging: draggedTag === child.id, 'merge-target': tagDropTarget === `merge:${child.id}` }"
+                  :style="childArcStyle(index, childTagNodes(tag.id).length)"
+                  draggable="true"
+                  @dragstart.stop="startTagDrag($event, child.id)"
+                  @dragend="draggedTag = ''; tagDropTarget = ''"
+                >
+                  <button
+                    type="button"
+                    title="拖到这里合并标签"
+                    @dragenter.stop.prevent="tagDropTarget = `merge:${child.id}`"
+                    @dragover.stop.prevent
+                    @drop.stop.prevent="dropTag($event, child.id, 'merge')"
+                  >合并</button>
+                  <strong>#{{ child.name }}</strong>
+                  <span>{{ child.count }} 条</span>
+                </article>
+              </div>
+            </div>
           </div>
         </section>
 
