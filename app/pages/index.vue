@@ -54,6 +54,8 @@ const announcements = site.notices
 let announcementTimer: number | null = null
 const announcementPaused = ref(false)
 const stickerDraft = ref({ title: '', description: '', submitterName: '', file: null as File | null })
+type UserscriptRelease = { version: string, releasedAt: string, title: string, notes: string[], downloadUrl: string }
+const userscriptRelease = ref<UserscriptRelease | null>(null)
 type SubmissionTagOption = {
   id: string
   name: string
@@ -72,6 +74,17 @@ const submissionTagCount = computed(() => submissionTagOptions.value.reduce((sum
 
 function moveAnnouncement(step: number) {
   announcementIndex.value = (announcementIndex.value + step + announcements.length) % announcements.length
+}
+
+function formatReleaseTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
 }
 
 function startAnnouncementRotation() {
@@ -231,6 +244,10 @@ onMounted(() => {
   void api<{ items: SubmissionTagOption[] }>('/api/tags', { query: { limit: 100 } })
     .then((result) => { submissionTagOptions.value = result.items })
     .catch(() => { submissionTagOptions.value = [] })
+  void fetch(`/userscripts/release.json?t=${Date.now()}`, { cache: 'no-store' })
+    .then((response) => response.ok ? response.json() : Promise.reject(new Error('版本信息加载失败')))
+    .then((release: UserscriptRelease) => { userscriptRelease.value = release })
+    .catch(() => { userscriptRelease.value = null })
   startAnnouncementRotation()
 })
 
@@ -431,6 +448,12 @@ onBeforeUnmount(() => {
           <h2>把烂梗库<br />搬进直播间。</h2>
           <p>打开任意斗鱼直播间都能使用。搜索烂梗后可以复制、填入弹幕框，或带 3 秒冷却地一键发送。</p>
           <a class="primary-button" href="/userscripts/nishuixiaogui-meme-helper.user.js" target="_blank">安装小龟烂梗助手 <span>↗</span></a>
+          <div v-if="userscriptRelease" class="helper-release" aria-label="小龟助手版本信息">
+            <strong>v{{ userscriptRelease.version }}</strong>
+            <span>更新于 {{ formatReleaseTime(userscriptRelease.releasedAt) }}</span>
+            <p>{{ userscriptRelease.title }}</p>
+            <small>{{ userscriptRelease.notes.join(' · ') }}</small>
+          </div>
           <small>安装后打开任意斗鱼直播间，就会出现可自由拖动的“小龟烂梗”按钮。</small>
         </div>
         <div class="helper-steps">

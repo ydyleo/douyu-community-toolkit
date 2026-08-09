@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev",
-    "build": "nuxt build",
-    "generate": "nuxt generate",
+    "build": "npm run check:userscript && nuxt build",
+    "generate": "npm run check:userscript && nuxt generate",
+    "check:userscript": "node scripts/check-userscript-release.mjs",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "postinstall": "nuxt prepare"

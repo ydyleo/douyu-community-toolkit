@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.7.3
+// @version      0.7.4
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -13,6 +13,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_info
 // @connect      127.0.0.1
 // @connect      localhost
 // @connect      9765366.cn
@@ -31,16 +32,18 @@
     apiBase: GM_getValue('apiBase', 'http://127.0.0.1:4000').replace(/\/$/, ''),
     cooldownMs: 3000,
   };
+  const RELEASE_URL = 'https://9765366.cn/userscripts/release.json';
+  const RELEASE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
     panel: 'xiaoguiPanelPosition',
   };
 
-  function request(method, path) {
+  function requestUrl(method, url) {
     return new Promise(function (resolve, reject) {
       GM_xmlhttpRequest({
         method: method,
-        url: CONFIG.apiBase + path,
+        url: url,
         timeout: 8000,
         onload: function (response) {
           if (response.status < 200 || response.status >= 300) {
@@ -57,6 +60,21 @@
         ontimeout: function () { reject(new Error('请求超时')); },
       });
     });
+  }
+
+  function request(method, path) {
+    return requestUrl(method, CONFIG.apiBase + path);
+  }
+
+  function compareVersions(left, right) {
+    const leftParts = String(left).split('.').map(Number);
+    const rightParts = String(right).split('.').map(Number);
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index += 1) {
+      const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+      if (difference) return difference;
+    }
+    return 0;
   }
 
   function queryDeep(selector, root) {
@@ -112,7 +130,8 @@
 
   const header = make('header', 'xg-header');
   const titleWrap = make('div');
-  titleWrap.append(make('strong', '', '小龟烂梗助手'), make('small', '', '当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动'));
+  const installedVersion = GM_info && GM_info.script ? GM_info.script.version : '';
+  titleWrap.append(make('strong', '', '小龟烂梗助手'), make('small', '', 'v' + installedVersion + ' · 当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动'));
   const headerActions = make('div', 'xg-header-actions');
   const hideButton = make('button', 'xg-hide', '本页隐藏');
   hideButton.type = 'button';
@@ -121,6 +140,9 @@
   closeButton.setAttribute('aria-label', '收起');
   headerActions.append(hideButton, closeButton);
   header.append(titleWrap, headerActions);
+
+  const updateNotice = make('div', 'xg-update-notice');
+  updateNotice.hidden = true;
 
   const searchRow = make('div', 'xg-search');
   const searchInput = make('input');
@@ -147,7 +169,7 @@
 
   const status = make('p', 'xg-status', '输入关键词，从小龟烂梗库搜索。');
   const results = make('div', 'xg-results');
-  panel.append(header, searchRow, quickTags, quickTagChildren, tagSearch, status, results);
+  panel.append(header, updateNotice, searchRow, quickTags, quickTagChildren, tagSearch, status, results);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
@@ -158,6 +180,39 @@
   let quickTagItems = [];
   let expandedQuickTagId = '';
   let tagSearchTimer = 0;
+
+  function showUpdateNotice(release) {
+    updateNotice.replaceChildren();
+    const copy = make('div');
+    copy.append(
+      make('strong', '', '发现新版本 v' + release.version),
+      make('small', '', release.title || '小龟助手有新版本可用'),
+    );
+    const link = make('a', '', '立即更新 ↗');
+    link.href = release.downloadUrl || 'https://9765366.cn/userscripts/nishuixiaogui-meme-helper.user.js';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    updateNotice.append(copy, link);
+    updateNotice.hidden = false;
+  }
+
+  async function checkForUpdate(force) {
+    const lastCheckedAt = Number(GM_getValue('releaseCheckedAt', 0));
+    if (!force && Date.now() - lastCheckedAt < RELEASE_CHECK_INTERVAL) return 'skipped';
+    try {
+      const release = await requestUrl('GET', RELEASE_URL + '?t=' + Date.now());
+      GM_setValue('releaseCheckedAt', Date.now());
+      if (installedVersion && compareVersions(release.version, installedVersion) > 0) {
+        showUpdateNotice(release);
+        return 'update';
+      }
+      updateNotice.hidden = true;
+      return 'current';
+    } catch (error) {
+      console.warn('[小龟烂梗助手] 版本检查失败', error);
+      return 'error';
+    }
+  }
 
   function defaultLauncherPosition() {
     return {
@@ -503,6 +558,7 @@
     if (panel.classList.contains('is-open')) {
       window.requestAnimationFrame(function () {
         applyPanelPosition();
+        void checkForUpdate(false);
         void loadQuickTags();
         void search();
       });
@@ -538,6 +594,14 @@
     if (panel.classList.contains('is-open')) applyPanelPosition();
     window.alert('小龟助手已回到默认位置。');
   });
+  GM_registerMenuCommand('检查助手更新', function () {
+    GM_setValue('releaseCheckedAt', 0);
+    void checkForUpdate(true).then(function (result) {
+      if (result === 'current') window.alert('当前已是最新版本 v' + installedVersion + '。');
+      else if (result === 'error') window.alert('暂时无法检查更新，请稍后再试。');
+      else if (result === 'update' && !panel.classList.contains('is-open')) panel.classList.add('is-open');
+    });
+  });
   GM_registerMenuCommand('设置小龟助手服务地址', function () {
     const next = window.prompt('请输入小龟助手服务地址；本地调试默认为 http://127.0.0.1:4000', CONFIG.apiBase);
     if (!next) return;
@@ -555,6 +619,9 @@
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
     '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;cursor:pointer}',
     '.xg-close{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer}',
+    '.xg-update-notice{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid #171410;background:#fff3bf}',
+    '.xg-update-notice[hidden]{display:none}.xg-update-notice strong,.xg-update-notice small{display:block}.xg-update-notice strong{font-size:11px}.xg-update-notice small{margin-top:2px;color:#746c61;font-size:9px}',
+    '.xg-update-notice a{flex:0 0 auto;border:1px solid #171410;padding:5px 8px;background:#ff5c35;color:white;text-decoration:none;font-size:10px;font-weight:800}',
     '.xg-search{display:flex;gap:8px;padding:12px;border-bottom:1px solid rgba(23,20,16,.18)}',
     '.xg-search input{min-width:0;flex:1;border:1px solid #171410;padding:9px 10px;background:white;color:#171410}',
     '.xg-search button{border:1px solid #171410;padding:8px 13px;background:#171410;color:white;cursor:pointer}',
@@ -582,6 +649,7 @@
   makeDraggable(launcher, launcher, POSITION_KEYS.launcher, false);
   makeDraggable(header, panel, POSITION_KEYS.panel, true);
   applyLauncherPosition();
+  void checkForUpdate(false);
   window.addEventListener('resize', function () {
     const launcherPosition = applyLauncherPosition();
     GM_setValue(POSITION_KEYS.launcher, launcherPosition);
