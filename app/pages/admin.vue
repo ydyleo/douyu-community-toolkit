@@ -272,6 +272,21 @@ function dropTagToRoot(event: DragEvent) {
   void moveTagToParent(sourceId, null)
 }
 
+function handlePageTagDragOver(event: DragEvent) {
+  const source = tagNode(draggedTag.value)
+  if (!source?.parentId || (event.target as Element | null)?.closest?.('[data-tag-drop-target]')) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  tagDropTarget.value = 'root'
+}
+
+function handlePageTagDrop(event: DragEvent) {
+  const source = tagNode(draggedTag.value)
+  if (!source?.parentId || (event.target as Element | null)?.closest?.('[data-tag-drop-target]')) return
+  event.preventDefault()
+  dropTagToRoot(event)
+}
+
 function toggleTagChildren(id: string) {
   if (!childTagNodes(id).length) return
   expandedTagId.value = expandedTagId.value === id ? '' : id
@@ -868,6 +883,8 @@ watch(jokeAdminQuery, () => {
 })
 
 onMounted(async () => {
+  window.addEventListener('dragover', handlePageTagDragOver)
+  window.addEventListener('drop', handlePageTagDrop)
   try {
     const session = await api<{ authenticated: boolean, user?: AdminSessionUser }>('/api/admin/session')
     authenticated.value = session.authenticated
@@ -876,6 +893,11 @@ onMounted(async () => {
   } finally {
     checkingSession.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragover', handlePageTagDragOver)
+  window.removeEventListener('drop', handlePageTagDrop)
 })
 </script>
 
@@ -1123,9 +1145,6 @@ onMounted(async () => {
             v-else
             class="admin-tag-grid"
             :class="{ 'root-drop-active': Boolean(draggedTag && tagNode(draggedTag)?.parentId) }"
-            @dragenter.self="tagDropTarget = 'root'"
-            @dragover.prevent
-            @drop.prevent="dropTagToRoot"
           >
             <div
               v-for="tag in visibleRootTagNodes"
@@ -1135,6 +1154,7 @@ onMounted(async () => {
             >
               <article
                 class="admin-tag-card"
+                data-tag-drop-target
                 :class="{ dragging: draggedTag === tag.id, 'drop-target': tagDropTarget === tag.id && draggedTag !== tag.id }"
                 draggable="true"
                 @click="toggleTagChildren(tag.id)"
@@ -1144,7 +1164,7 @@ onMounted(async () => {
                 @dragover.prevent
                 @drop.stop.prevent="dropTag($event, tag.id)"
               >
-                <strong>#{{ tag.name }}</strong>
+                <strong><i v-if="childTagNodes(tag.id).length" class="admin-parent-star" aria-hidden="true">★</i>#{{ tag.name }}</strong>
                 <span>{{ tag.count }} 条烂梗<template v-if="childTagNodes(tag.id).length"> · {{ childTagNodes(tag.id).length }} 个子标签</template></span>
                 <small v-if="similarTagNames(tag.name).length" class="admin-tag-similar">相似 {{ similarTagNames(tag.name).map(item => `#${item.name}`).join(' · ') }}</small>
                 <small v-else-if="childTagNodes(tag.id).length">点击{{ expandedTagId === tag.id ? '收起' : '展开' }}子标签</small>
@@ -1155,6 +1175,7 @@ onMounted(async () => {
                   v-for="(child, index) in childTagNodes(tag.id)"
                   :key="child.id"
                   class="admin-child-tag"
+                  data-tag-drop-target
                   :class="{ dragging: draggedTag === child.id, 'drop-target': tagDropTarget === child.id && draggedTag !== child.id }"
                   :style="childArcStyle(index, childTagNodes(tag.id).length)"
                   draggable="true"
