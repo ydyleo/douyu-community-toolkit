@@ -9,6 +9,7 @@ import type {
   MediaAsset,
   Meme,
   SubmissionStatus,
+  TagOptionGroup,
   TrafficAnalytics,
 } from '#shared/types/meme'
 
@@ -86,6 +87,7 @@ const analyticsRange = ref<7 | 30 | 90>(30)
 const analyticsRangeLoading = ref(false)
 const analyticsRanges = [7, 30, 90] as const
 const tagSuggestions = ref<{ name: string, count: number }[]>([])
+const tagOptionGroups = ref<TagOptionGroup[]>([])
 const tagNodes = ref<TagTreeNode[]>([])
 const tagAdminQuery = ref('')
 const jokeAdminQuery = ref('')
@@ -100,8 +102,6 @@ const deletingTagId = ref('')
 let tagAutoScrollVelocity = 0
 let tagAutoScrollTimer: number | null = null
 let tagAutoScrollStartedAt = 0
-const showAllEditorTags = ref(false)
-const showAllDraftTags = ref(false)
 const showOnlyUntagged = ref(false)
 const jokePage = ref(1)
 const jokeEditor = ref<JokeEditor | null>(null)
@@ -124,12 +124,6 @@ const visibleJokes = computed(() => {
 const jokePageSize = 10
 const jokeTotalPages = computed(() => Math.max(1, Math.ceil(visibleJokes.value.length / jokePageSize)))
 const paginatedJokes = computed(() => visibleJokes.value.slice((jokePage.value - 1) * jokePageSize, jokePage.value * jokePageSize))
-const visibleEditorTagSuggestions = computed(() => showAllEditorTags.value
-  ? tagSuggestions.value
-  : tagSuggestions.value.slice(0, 10))
-const visibleDraftTagSuggestions = computed(() => showAllDraftTags.value
-  ? tagSuggestions.value
-  : tagSuggestions.value.slice(0, 10))
 const editorSelectedTags = computed(() => jokeEditor.value ? splitTags(jokeEditor.value.tags) : [])
 const draftSelectedTags = computed(() => splitTags(jokeDraft.value.tags))
 const managedTags = computed(() => {
@@ -240,7 +234,6 @@ function splitTags(value: string) {
 }
 
 function openJokeEditor(item: Meme | AdminJokeSubmission, kind: JokeEditor['kind']) {
-  showAllEditorTags.value = false
   newEditorTag.value = ''
   jokeEditor.value = {
     kind,
@@ -262,12 +255,6 @@ function toggleEditorTag(name: string) {
   jokeEditor.value.tags = tags.join(', ')
 }
 
-function editorHasTag(name: string) {
-  return jokeEditor.value
-    ? splitTags(jokeEditor.value.tags).some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
-    : false
-}
-
 function toggleDraftTag(name: string) {
   const tags = splitTags(jokeDraft.value.tags)
   const index = tags.findIndex((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
@@ -276,12 +263,17 @@ function toggleDraftTag(name: string) {
   jokeDraft.value.tags = tags.join(', ')
 }
 
-function draftHasTag(name: string) {
-  return splitTags(jokeDraft.value.tags).some((tag) => tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN'))
-}
-
 function appendTags(current: string, additions: string) {
   return splitTags(`${current},${additions}`).join(', ')
+}
+
+function applyPublicTagOptions(items: TagOptionGroup[]) {
+  tagOptionGroups.value = items
+  const flattened = items.flatMap((group) => [
+    { name: group.name, count: group.count },
+    ...group.children.map((child) => ({ name: child.name, count: child.count })),
+  ])
+  tagSuggestions.value = [...new Map(flattened.map((tag) => [tag.name.toLocaleLowerCase('zh-CN'), tag])).values()]
 }
 
 function addDraftTag() {
@@ -666,18 +658,18 @@ async function loadCurrentPanel() {
     } else if (activePanel.value === 'joke-review') {
       const [result, tagsResult] = await Promise.all([
         api<{ items: AdminJokeSubmission[] }>('/api/admin/submissions', { query: { status: status.value } }),
-        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } }),
+        api<{ items: TagOptionGroup[] }>('/api/tags', { query: { limit: 100 } }),
       ])
       jokeSubmissions.value = result.items
-      tagSuggestions.value = tagsResult.items
+      applyPublicTagOptions(tagsResult.items)
       submissionSimilarities.value = {}
     } else if (activePanel.value === 'jokes') {
       const [result, tagsResult] = await Promise.all([
         api<{ items: Meme[] }>('/api/admin/jokes'),
-        api<{ items: { name: string, count: number }[] }>('/api/tags', { query: { limit: 100 } }),
+        api<{ items: TagOptionGroup[] }>('/api/tags', { query: { limit: 100 } }),
       ])
       jokes.value = result.items
-      tagSuggestions.value = tagsResult.items
+      applyPublicTagOptions(tagsResult.items)
     } else if (activePanel.value === 'tags') {
       const cleanupResult = await api<{ deletedCount: number }>('/api/admin/tags/cleanup-unused', { method: 'POST' })
       const result = await api<{ items: TagTreeNode[] }>('/api/admin/tags/tree')
@@ -1188,21 +1180,13 @@ onBeforeUnmount(() => {
                 <button v-for="tag in draftSelectedTags" :key="tag" type="button" @click="toggleDraftTag(tag)">#{{ tag }} ×</button>
               </div>
               <p v-else class="admin-tag-empty">暂未选择标签</p>
-              <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
+              <div class="admin-existing-tag-picker">
                 <span>选择已有：</span>
-                <button
-                  v-for="tag in visibleDraftTagSuggestions"
-                  :key="tag.name"
-                  type="button"
-                  :class="{ active: draftHasTag(tag.name) }"
-                  @click="toggleDraftTag(tag.name)"
-                >{{ tag.name }} · {{ tag.count }}</button>
-                <button
-                  v-if="tagSuggestions.length > 10"
-                  type="button"
-                  class="tag-expand-button"
-                  @click="showAllDraftTags = !showAllDraftTags"
-                >{{ showAllDraftTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
+                <HierarchicalTagPicker
+                  :groups="tagOptionGroups"
+                  :selected="draftSelectedTags"
+                  @toggle="toggleDraftTag"
+                />
               </div>
               <div class="admin-new-tag-row">
                 <input v-model="newDraftTag" maxlength="80" placeholder="输入新标签" @keydown.enter.prevent="addDraftTag" />
@@ -1606,21 +1590,13 @@ onBeforeUnmount(() => {
                 <button v-for="tag in editorSelectedTags" :key="tag" type="button" @click="toggleEditorTag(tag)">#{{ tag }} ×</button>
               </div>
               <p v-else class="admin-tag-empty">暂未选择标签</p>
-              <div v-if="tagSuggestions.length" class="admin-tag-suggestions">
+              <div class="admin-existing-tag-picker">
                 <span>选择已有：</span>
-                <button
-                  v-for="tag in visibleEditorTagSuggestions"
-                  :key="tag.name"
-                  type="button"
-                  :class="{ active: editorHasTag(tag.name) }"
-                  @click="toggleEditorTag(tag.name)"
-                >{{ tag.name }} · {{ tag.count }}</button>
-                <button
-                  v-if="tagSuggestions.length > 10"
-                  type="button"
-                  class="tag-expand-button"
-                  @click="showAllEditorTags = !showAllEditorTags"
-                >{{ showAllEditorTags ? '收起' : `全部 ${tagSuggestions.length}` }}</button>
+                <HierarchicalTagPicker
+                  :groups="tagOptionGroups"
+                  :selected="editorSelectedTags"
+                  @toggle="toggleEditorTag"
+                />
               </div>
               <div class="admin-new-tag-row">
                 <input v-model="newEditorTag" maxlength="80" placeholder="输入新标签" @keydown.enter.prevent="addEditorTag" />

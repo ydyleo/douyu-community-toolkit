@@ -109,3 +109,16 @@ export type TrafficAnalytics = {
     userscriptInstalls: number
   }>
 }
+
+export type TagOptionGroup = {
+  id: string
+  name: string
+  count: number
+  isParent: boolean
+  children: Array<{
+    id: string
+    name: string
+    count: number
+    parentId: string
+  }>
+}

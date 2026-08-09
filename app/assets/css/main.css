@@ -443,11 +443,8 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-editor-dialog textarea { resize: vertical; }
 .admin-editor-dialog .admin-checkbox { display: flex; align-items: center; gap: 9px; }
 .admin-editor-dialog .admin-checkbox input { width: auto; }
-.admin-tag-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-.admin-tag-suggestions > span { margin-right: 3px; color: #625a69; font-size: 11px; }
-.admin-tag-suggestions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; background: white; cursor: pointer; font-size: 11px; }
-.admin-tag-suggestions button.active { border-color: var(--ink); background: var(--ink); color: white; }
-.admin-tag-suggestions button.tag-expand-button { border-style: dashed; background: #fffaf0; color: var(--ink); }
+.admin-existing-tag-picker { display: grid; gap: 9px; }
+.admin-existing-tag-picker > span { color: #625a69; font-size: 11px; }
 .admin-tag-fieldset { display: grid; gap: 10px; margin: 0; padding: 13px; border: 1px solid var(--ink); }
 .admin-tag-fieldset legend { padding: 0 6px; font-size: 12px; font-weight: 800; }
 .admin-tag-fieldset legend span, .admin-tag-fieldset > small { color: #625a69; font-size: 11px; font-weight: 500; }

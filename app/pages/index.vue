@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { categories, site } from '~/data/site'
-import type { MediaAsset } from '#shared/types/meme'
+import type { MediaAsset, TagOptionGroup } from '#shared/types/meme'
 
 useSeoMeta({
   title: site.streamerName,
@@ -60,21 +60,8 @@ const stickerDraft = ref({ title: '', description: '', submitterName: '', file: 
 type UserscriptReleaseEntry = { version: string, releasedAt: string, title: string, notes: string[] }
 type UserscriptRelease = UserscriptReleaseEntry & { downloadUrl: string, history: UserscriptReleaseEntry[] }
 const userscriptRelease = ref<UserscriptRelease | null>(null)
-type SubmissionTagOption = {
-  id: string
-  name: string
-  count: number
-  isParent: boolean
-  children: Array<{ id: string, name: string, count: number, parentId: string }>
-}
-const submissionTagOptions = ref<SubmissionTagOption[]>([])
-const showAllSubmissionTags = ref(false)
-const expandedSubmissionParentId = ref('')
+const submissionTagOptions = ref<TagOptionGroup[]>([])
 const suggestedTag = ref('')
-const visibleSubmissionTagOptions = computed(() => showAllSubmissionTags.value
-  ? submissionTagOptions.value
-  : submissionTagOptions.value.slice(0, 10))
-const submissionTagCount = computed(() => submissionTagOptions.value.reduce((sum, tag) => sum + 1 + tag.children.length, 0))
 
 function moveAnnouncement(step: number) {
   announcementIndex.value = (announcementIndex.value + step + announcements.length) % announcements.length
@@ -117,10 +104,6 @@ function toggleSubmissionTag(name: string) {
   if (index >= 0) tags.splice(index, 1)
   else if (tags.length < 5) tags.push(name)
   draft.value.tags = tags.join(', ')
-}
-
-function toggleSubmissionParent(id: string) {
-  expandedSubmissionParentId.value = expandedSubmissionParentId.value === id ? '' : id
 }
 
 async function submitMemeDraft() {
@@ -246,7 +229,7 @@ onMounted(() => {
   void api('/api/analytics/visit', { method: 'POST' }).catch(() => undefined)
   musicEnabled.value = localStorage.getItem('xiaogui-bgm') !== 'off'
   if (musicEnabled.value) void playMusic()
-  void api<{ items: SubmissionTagOption[] }>('/api/tags', { query: { limit: 100 } })
+  void api<{ items: TagOptionGroup[] }>('/api/tags', { query: { limit: 100 } })
     .then((result) => { submissionTagOptions.value = result.items })
     .catch(() => { submissionTagOptions.value = [] })
   void fetch(`/userscripts/release.json?t=${Date.now()}`, { cache: 'no-store' })
@@ -552,46 +535,12 @@ onBeforeUnmount(() => {
         </div>
         <fieldset class="submission-tag-fieldset">
           <legend>选择已有标签 <span>可多选，最多 5 个</span></legend>
-          <div v-if="submissionTagOptions.length" class="submission-tag-options">
-            <div
-              v-for="tag in visibleSubmissionTagOptions"
-              :key="tag.id"
-              class="submission-tag-group"
-              :class="{ expanded: expandedSubmissionParentId === tag.id }"
-            >
-              <button
-                v-if="tag.isParent"
-                type="button"
-                class="submission-parent-tag"
-                :class="{ active: submissionHasTag(tag.name) || tag.children.some(child => submissionHasTag(child.name)) }"
-                :aria-expanded="expandedSubmissionParentId === tag.id"
-                @click="toggleSubmissionParent(tag.id)"
-              ><span class="submission-parent-star">★</span>#{{ tag.name }} <small>{{ tag.count }}</small><span class="submission-tag-chevron">⌄</span></button>
-              <button
-                v-else
-                type="button"
-                :class="{ active: submissionHasTag(tag.name) }"
-                @click="toggleSubmissionTag(tag.name)"
-              >#{{ tag.name }} <small>{{ tag.count }}</small></button>
-              <div v-if="tag.isParent && expandedSubmissionParentId === tag.id" class="submission-child-tags">
-                <button type="button" :class="{ active: submissionHasTag(tag.name) }" @click="toggleSubmissionTag(tag.name)">#{{ tag.name }}（父标签）</button>
-                <button
-                  v-for="child in tag.children"
-                  :key="child.id"
-                  type="button"
-                  :class="{ active: submissionHasTag(child.name) }"
-                  @click="toggleSubmissionTag(child.name)"
-                >#{{ child.name }} <small>{{ child.count }}</small></button>
-              </div>
-            </div>
-            <button
-              v-if="submissionTagOptions.length > 10"
-              type="button"
-              class="tag-expand-button"
-              @click="showAllSubmissionTags = !showAllSubmissionTags"
-            >{{ showAllSubmissionTags ? '收起' : `全部 ${submissionTagCount}` }}</button>
-          </div>
-          <p v-else class="form-hint">暂时没有可选标签，可以在下面建议一个新标签。</p>
+          <HierarchicalTagPicker
+            :groups="submissionTagOptions"
+            :selected="selectedSubmissionTags()"
+            empty-text="暂时没有可选标签，可以在下面建议一个新标签。"
+            @toggle="toggleSubmissionTag"
+          />
         </fieldset>
         <label>
           建议新标签 <span class="optional-field">可选，审核时由管理员统一</span>
