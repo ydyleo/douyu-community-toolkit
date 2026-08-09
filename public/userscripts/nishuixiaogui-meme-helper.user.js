@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.7.0
+// @version      0.7.1
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -284,8 +284,10 @@
     showStatus('已复制：' + item.text);
   }
 
-  function fillText(item) {
-    if (setChatText(item.text)) showStatus('已填入弹幕框，确认无误后再发送。');
+  function fillText(item, countElement) {
+    if (!setChatText(item.text)) return;
+    void addCopyCount(item, countElement);
+    showStatus('已填入弹幕框，确认无误后再发送。');
   }
 
   function updateCooldown(button) {
@@ -346,7 +348,7 @@
       const sendButton = make('button', 'xg-send', '发送');
       fillButton.type = 'button';
       sendButton.type = 'button';
-      fillButton.addEventListener('click', function () { fillText(item); });
+      fillButton.addEventListener('click', function () { fillText(item, countElement); });
       sendButton.addEventListener('click', function () { sendText(item, sendButton); });
       actions.append(fillButton, sendButton);
       card.append(copyButton, meta, actions);
