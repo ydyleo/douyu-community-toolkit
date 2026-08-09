@@ -220,6 +220,7 @@ function addEditorTag() {
 
 function startTagDrag(event: DragEvent, id: string) {
   draggedTag.value = id
+  document.documentElement.classList.add('admin-tag-dragging')
   event.dataTransfer?.setData('text/plain', id)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
@@ -227,8 +228,9 @@ function startTagDrag(event: DragEvent, id: string) {
 function runTagAutoScroll() {
   if (!tagAutoScrollVelocity) return
   const heldFor = Math.max(0, Date.now() - tagAutoScrollStartedAt)
-  const holdAcceleration = 1 + Math.min(0.7, heldFor / 1_200 * 0.7)
-  window.scrollBy(0, Math.round(tagAutoScrollVelocity * holdAcceleration))
+  const holdAcceleration = 1 + Math.min(0.8, heldFor / 900 * 0.8)
+  const scrollingElement = document.scrollingElement
+  if (scrollingElement) scrollingElement.scrollTop += Math.round(tagAutoScrollVelocity * holdAcceleration)
 }
 
 function stopTagAutoScroll() {
@@ -242,7 +244,7 @@ function updateTagAutoScroll(pointerY: number) {
   const edge = Math.min(150, window.innerHeight * 0.24)
   const acceleratedSpeed = (distance: number) => {
     const ratio = Math.max(0, distance / edge)
-    return Math.min(44, Math.round(6 + Math.pow(ratio, 1.45) * 34))
+    return Math.min(64, Math.round(16 + Math.pow(ratio, 1.35) * 48))
   }
   const nextVelocity = pointerY < edge
     ? -acceleratedSpeed(edge - pointerY)
@@ -255,12 +257,16 @@ function updateTagAutoScroll(pointerY: number) {
   }
   if (Math.sign(nextVelocity) !== Math.sign(tagAutoScrollVelocity)) tagAutoScrollStartedAt = Date.now()
   tagAutoScrollVelocity = nextVelocity
-  if (tagAutoScrollTimer === null) tagAutoScrollTimer = window.setInterval(runTagAutoScroll, 20)
+  if (tagAutoScrollTimer === null) {
+    runTagAutoScroll()
+    tagAutoScrollTimer = window.setInterval(runTagAutoScroll, 20)
+  }
 }
 
 function finishTagDrag() {
   draggedTag.value = ''
   tagDropTarget.value = ''
+  document.documentElement.classList.remove('admin-tag-dragging')
   stopTagAutoScroll()
 }
 
