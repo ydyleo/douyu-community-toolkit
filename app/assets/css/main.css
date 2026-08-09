@@ -330,9 +330,9 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
 .admin-tag-card span { color: #625a69; font-size: 12px; }
 .admin-tag-card small { margin-top: 7px; color: #8a818b; font-size: 10px; }
 .admin-tag-card .admin-tag-similar { margin-top: 8px; padding: 6px 8px; border-left: 3px solid var(--orange); background: #fff0eb; color: #8f3928; font-weight: 700; line-height: 1.4; }
-.admin-child-list { position: relative; margin: 17px 0 3px 18px; padding: 18px 12px 12px 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 9px; border: 1px solid var(--line); background: #f8f2e7; animation: admin-child-open .18s ease-out both; }
-.admin-child-tag { min-width: 0; min-height: 52px; padding: 9px 10px; display: grid; align-content: center; gap: 3px; border: 1px solid var(--ink); background: white; box-shadow: 2px 2px 0 #c6d79f; cursor: grab; user-select: none; -webkit-user-drag: element; transition: opacity .15s ease, box-shadow .15s ease, transform .15s ease; }
-.admin-child-tag:hover { transform: translateY(-1px); box-shadow: 4px 4px 0 #8fb850; }
+.admin-child-list { position: relative; margin: 12px 0 3px; padding: 10px 10px 14px; display: flex; align-items: flex-start; gap: 9px; min-height: 90px; overflow-x: auto; overflow-y: hidden; border: 1px solid var(--line); background: #f8f2e7; scrollbar-width: thin; animation: admin-child-open .18s ease-out both; }
+.admin-child-tag { --child-y: 0px; min-width: 96px; min-height: 52px; padding: 9px 10px; display: grid; align-content: center; flex: 0 0 96px; gap: 3px; transform: translateY(var(--child-y)); border: 1px solid var(--ink); background: white; box-shadow: 2px 2px 0 #c6d79f; cursor: grab; user-select: none; -webkit-user-drag: element; transition: opacity .15s ease, box-shadow .15s ease, transform .15s ease; }
+.admin-child-tag:hover { transform: translateY(calc(var(--child-y) - 2px)); box-shadow: 4px 4px 0 #8fb850; }
 .admin-child-tag.dragging { opacity: .4; }
 .admin-child-tag.drop-target { background: #eff8dc; box-shadow: 4px 4px 0 #7aa63e; }
 .admin-child-tag strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -469,7 +469,7 @@ footer { padding: 26px clamp(22px, 5vw, 76px); display: flex; justify-content: s
   .admin-filter-toggle { justify-content: center; }
   .admin-root-dropzone { align-items: flex-start; flex-direction: column; }
   .admin-tag-grid { grid-template-columns: 1fr; }
-  .admin-child-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-child-list { min-height: 88px; }
   .admin-tag-choice-actions { grid-template-columns: 1fr; }
   .admin-editor-backdrop { padding: 12px; place-items: start center; }
   .admin-editor-dialog { max-height: calc(100vh - 24px); }
