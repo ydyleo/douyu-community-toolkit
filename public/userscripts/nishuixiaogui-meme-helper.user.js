@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.6.0
+// @version      0.6.1
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -254,15 +254,17 @@
     return true;
   }
 
-  async function addCopyCount(id) {
+  async function addCopyCount(item, countElement) {
     try {
-      await request('POST', '/api/memes/' + encodeURIComponent(id) + '/copy');
+      const result = await request('POST', '/api/memes/' + encodeURIComponent(item.id) + '/copy');
+      item.copyCount = result.copyCount;
+      if (countElement) countElement.textContent = '复制 ' + result.copyCount;
     } catch (error) {
       console.warn('[小龟烂梗助手] 复制计数失败', error);
     }
   }
 
-  async function copyText(item) {
+  async function copyText(item, countElement) {
     try {
       await navigator.clipboard.writeText(item.text);
     } catch (_) {
@@ -275,7 +277,7 @@
       document.execCommand('copy');
       textarea.remove();
     }
-    void addCopyCount(item.id);
+    void addCopyCount(item, countElement);
     showStatus('已复制：' + item.text);
   }
 
@@ -300,7 +302,7 @@
     cooldownTimer = window.setInterval(tick, 250);
   }
 
-  function sendText(item, button) {
+  function sendText(item, button, countElement) {
     if (Date.now() < cooldownUntil) {
       updateCooldown(button);
       showStatus('发送冷却中，请稍等。', true);
@@ -316,7 +318,7 @@
       sendButton.click();
       cooldownUntil = Date.now() + CONFIG.cooldownMs;
       updateCooldown(button);
-      void addCopyCount(item.id);
+      void addCopyCount(item, countElement);
       showStatus('已发送，3 秒后可以再次一键发送。');
     }, 80);
   }
@@ -332,17 +334,18 @@
       const copyButton = make('button', 'xg-meme-text', item.text);
       copyButton.type = 'button';
       copyButton.title = '点击复制';
-      copyButton.addEventListener('click', function () { void copyText(item); });
       const meta = make('div', 'xg-meta');
       const tagText = (item.tags || []).slice(0, 3).map(function (tag) { return '#' + tag; }).join(' ');
-      meta.append(make('span', '', '#' + item.category + (tagText ? ' · ' + tagText : '')), make('span', '', '复制 ' + (item.copyCount || 0)));
+      const countElement = make('span', '', '复制 ' + (item.copyCount || 0));
+      copyButton.addEventListener('click', function () { void copyText(item, countElement); });
+      meta.append(make('span', '', '#' + item.category + (tagText ? ' · ' + tagText : '')), countElement);
       const actions = make('div', 'xg-actions');
       const fillButton = make('button', 'xg-fill', '填入');
       const sendButton = make('button', 'xg-send', '发送');
       fillButton.type = 'button';
       sendButton.type = 'button';
       fillButton.addEventListener('click', function () { fillText(item); });
-      sendButton.addEventListener('click', function () { sendText(item, sendButton); });
+      sendButton.addEventListener('click', function () { sendText(item, sendButton, countElement); });
       actions.append(fillButton, sendButton);
       card.append(copyButton, meta, actions);
       results.append(card);

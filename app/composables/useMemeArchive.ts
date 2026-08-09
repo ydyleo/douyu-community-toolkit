@@ -51,6 +51,8 @@ export function useMemeArchive() {
   const hydrated = ref(false)
   const draft = ref({ text: '', category: categories[1]!, source: '', tags: '' })
   let refreshPromise: Promise<void> | null = null
+  let copyCountRefreshPromise: Promise<void> | null = null
+  let copyCountRefreshTimer: number | null = null
 
   // 正式数据放在前面：同一条梗既有本地暂存又已经公开时，只展示正式版本。
   const allMemes = computed(() => dedupeMemes([...remoteMemes.value, ...localMemes.value]))
@@ -145,6 +147,21 @@ export function useMemeArchive() {
     return refreshPromise
   }
 
+  function refreshCopyCounts() {
+    if (copyCountRefreshPromise) return copyCountRefreshPromise
+    copyCountRefreshPromise = (async () => {
+      const result = await api<{ items: { id: string, copyCount: number }[] }>('/api/memes/copy-counts')
+      const serverCounts = Object.fromEntries(result.items.map((item) => [item.id, item.copyCount]))
+      copyCounts.value = Object.fromEntries(
+        Object.keys({ ...copyCounts.value, ...serverCounts })
+          .map((id) => [id, Math.max(copyCounts.value[id] ?? 0, serverCounts[id] ?? 0)]),
+      )
+    })().finally(() => {
+      copyCountRefreshPromise = null
+    })
+    return copyCountRefreshPromise
+  }
+
   async function submitMeme() {
     const text = draft.value.text.trim()
     if (!text) {
@@ -228,6 +245,9 @@ export function useMemeArchive() {
     window.addEventListener('storage', refreshFromStorage)
     window.addEventListener(MEME_ARCHIVE_UPDATED_EVENT, refreshFromAdmin)
     document.addEventListener('visibilitychange', refreshWhenVisible)
+    copyCountRefreshTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshCopyCounts()
+    }, 20_000)
     try {
       await refreshRemoteMemes()
     } catch {
@@ -240,6 +260,7 @@ export function useMemeArchive() {
     window.removeEventListener('storage', refreshFromStorage)
     window.removeEventListener(MEME_ARCHIVE_UPDATED_EVENT, refreshFromAdmin)
     document.removeEventListener('visibilitychange', refreshWhenVisible)
+    if (copyCountRefreshTimer !== null) window.clearInterval(copyCountRefreshTimer)
   })
 
   return {

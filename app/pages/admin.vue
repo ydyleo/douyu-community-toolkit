@@ -233,9 +233,13 @@ function runTagAutoScroll() {
 }
 
 function updateTagAutoScroll(pointerY: number) {
-  const edge = Math.min(110, window.innerHeight * 0.2)
-  if (pointerY < edge) tagAutoScrollVelocity = -Math.max(3, Math.round((edge - pointerY) / edge * 15))
-  else if (pointerY > window.innerHeight - edge) tagAutoScrollVelocity = Math.max(3, Math.round((pointerY - (window.innerHeight - edge)) / edge * 15))
+  const edge = Math.min(150, window.innerHeight * 0.24)
+  const acceleratedSpeed = (distance: number) => {
+    const ratio = Math.max(0, distance / edge)
+    return Math.min(56, Math.round(5 + Math.pow(ratio, 1.65) * 43))
+  }
+  if (pointerY < edge) tagAutoScrollVelocity = -acceleratedSpeed(edge - pointerY)
+  else if (pointerY > window.innerHeight - edge) tagAutoScrollVelocity = acceleratedSpeed(pointerY - (window.innerHeight - edge))
   else tagAutoScrollVelocity = 0
   if (tagAutoScrollVelocity && tagAutoScrollFrame === null) tagAutoScrollFrame = window.requestAnimationFrame(runTagAutoScroll)
 }
