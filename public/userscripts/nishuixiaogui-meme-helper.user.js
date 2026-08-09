@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.6.1
+// @version      0.7.0
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -133,6 +133,8 @@
   searchRow.append(searchInput, searchButton);
 
   const quickTags = make('div', 'xg-quick-tags');
+  const quickTagChildren = make('div', 'xg-quick-tag-children');
+  quickTagChildren.hidden = true;
 
   const tagSearch = make('div', 'xg-tag-search');
   const tagSearchInput = make('input');
@@ -146,7 +148,7 @@
 
   const status = make('p', 'xg-status', '输入关键词，从小龟烂梗库搜索。');
   const results = make('div', 'xg-results');
-  panel.append(header, searchRow, quickTags, tagSearch, status, results);
+  panel.append(header, searchRow, quickTags, quickTagChildren, tagSearch, status, results);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
@@ -155,6 +157,7 @@
   let suppressLauncherClick = false;
   let activeTag = '';
   let quickTagItems = [];
+  let expandedQuickTagId = '';
   let tagSearchTimer = 0;
 
   function defaultLauncherPosition() {
@@ -302,7 +305,7 @@
     cooldownTimer = window.setInterval(tick, 250);
   }
 
-  function sendText(item, button, countElement) {
+  function sendText(item, button) {
     if (Date.now() < cooldownUntil) {
       updateCooldown(button);
       showStatus('发送冷却中，请稍等。', true);
@@ -318,7 +321,6 @@
       sendButton.click();
       cooldownUntil = Date.now() + CONFIG.cooldownMs;
       updateCooldown(button);
-      void addCopyCount(item, countElement);
       showStatus('已发送，3 秒后可以再次一键发送。');
     }, 80);
   }
@@ -345,7 +347,7 @@
       fillButton.type = 'button';
       sendButton.type = 'button';
       fillButton.addEventListener('click', function () { fillText(item); });
-      sendButton.addEventListener('click', function () { sendText(item, sendButton, countElement); });
+      sendButton.addEventListener('click', function () { sendText(item, sendButton); });
       actions.append(fillButton, sendButton);
       card.append(copyButton, meta, actions);
       results.append(card);
@@ -371,6 +373,8 @@
   function renderQuickTags(items) {
     quickTagItems = items;
     quickTags.innerHTML = '';
+    quickTagChildren.replaceChildren();
+    quickTagChildren.hidden = true;
     const allButton = make('button', activeTag ? '' : 'is-active', '全部烂梗');
     allButton.type = 'button';
     allButton.addEventListener('click', function () {
@@ -380,17 +384,50 @@
     });
     quickTags.append(allButton);
     items.forEach(function (item) {
-      const button = make('button', activeTag === item.name ? 'is-active' : '', '#' + item.name);
+      const groupActive = activeTag === item.name || (item.children || []).some(function (child) { return child.name === activeTag; });
+      const button = make('button', groupActive ? 'is-active' : '', (item.isParent ? '★ ' : '') + '#' + item.name + (item.isParent ? '⌄' : ''));
       button.type = 'button';
       button.title = item.count + ' 条烂梗';
       button.addEventListener('click', function () {
+        if (item.isParent) {
+          expandedQuickTagId = expandedQuickTagId === item.id ? '' : item.id;
+          renderQuickTags(quickTagItems);
+          return;
+        }
         activeTag = activeTag === item.name ? '' : item.name;
+        expandedQuickTagId = '';
         renderQuickTags(quickTagItems);
         void search();
       });
       quickTags.append(button);
     });
-    if (activeTag && !items.some(function (item) { return item.name === activeTag; })) {
+    const expandedGroup = items.find(function (item) { return item.id === expandedQuickTagId; });
+    if (expandedGroup) {
+      const parentButton = make('button', activeTag === expandedGroup.name ? 'is-active' : '', '★ #' + expandedGroup.name + '（父标签）');
+      parentButton.type = 'button';
+      parentButton.addEventListener('click', function () {
+        activeTag = expandedGroup.name;
+        expandedQuickTagId = '';
+        renderQuickTags(quickTagItems);
+        void search();
+      });
+      quickTagChildren.append(parentButton);
+      (expandedGroup.children || []).forEach(function (child) {
+        const childButton = make('button', activeTag === child.name ? 'is-active' : '', '#' + child.name + ' · ' + child.count);
+        childButton.type = 'button';
+        childButton.addEventListener('click', function () {
+          activeTag = child.name;
+          expandedQuickTagId = '';
+          renderQuickTags(quickTagItems);
+          void search();
+        });
+        quickTagChildren.append(childButton);
+      });
+      quickTagChildren.hidden = false;
+    }
+    if (activeTag && !items.some(function (item) {
+      return item.name === activeTag || (item.children || []).some(function (child) { return child.name === activeTag; });
+    })) {
       const selectedButton = make('button', 'is-active', '#' + activeTag);
       selectedButton.type = 'button';
       selectedButton.title = '当前搜索标签，点击取消';
@@ -410,11 +447,16 @@
 
   function renderTagSearchOptions(items) {
     tagSearchOptions.replaceChildren();
-    if (!items.length) {
+    const options = items.reduce(function (result, item) {
+      result.push({ name: item.name, count: item.count, isParent: item.isParent });
+      (item.children || []).forEach(function (child) { result.push({ name: child.name, count: child.count, isParent: false }); });
+      return result;
+    }, []);
+    if (!options.length) {
       tagSearchOptions.append(make('p', 'xg-tag-search-empty', '没有匹配标签'));
     } else {
-      items.forEach(function (item) {
-        const button = make('button', '', '#' + item.name);
+      options.forEach(function (item) {
+        const button = make('button', '', (item.isParent ? '★ ' : '') + '#' + item.name);
         button.type = 'button';
         button.append(make('small', '', item.count + ' 条'));
         button.addEventListener('click', function () {
@@ -519,6 +561,9 @@
     '.xg-quick-tags{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
     '.xg-quick-tags button{flex:0 0 auto;border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:#fffaf0;color:#171410;font-size:10px;cursor:pointer}',
     '.xg-quick-tags button.is-active{border-color:#171410;background:#171410;color:white}',
+    '.xg-quick-tag-children{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:6px;padding:8px 12px;border-bottom:1px solid rgba(23,20,16,.14);background:#fff8dc}',
+    '.xg-quick-tag-children[hidden]{display:none}.xg-quick-tag-children button{border:1px solid rgba(23,20,16,.28);border-radius:999px;padding:5px 9px;background:white;color:#171410;font-size:10px;cursor:pointer}',
+    '.xg-quick-tag-children button.is-active{border-color:#171410;background:#171410;color:white}',
     '.xg-tag-search{position:relative;padding:7px 12px;border-bottom:1px solid rgba(23,20,16,.14);background:#fff}',
     '.xg-tag-search>input{box-sizing:border-box;width:100%;border:1px solid rgba(23,20,16,.35);border-radius:6px;padding:7px 9px;background:#fffaf0;color:#171410;font-size:11px}',
     '.xg-tag-search-options{position:absolute;z-index:4;top:calc(100% - 4px);left:12px;right:12px;max-height:170px;overflow:auto;border:1px solid #171410;background:white;box-shadow:4px 4px 0 #f3ce49}',
