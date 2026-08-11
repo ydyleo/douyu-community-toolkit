@@ -154,12 +154,10 @@
   const headerActions = make('div', 'xg-header-actions');
   const submitToggleButton = make('button', 'xg-submit-toggle', '＋ 投稿');
   submitToggleButton.type = 'button';
-  const hideButton = make('button', 'xg-hide', '本页隐藏');
-  hideButton.type = 'button';
   const closeButton = make('button', 'xg-close', '×');
   closeButton.type = 'button';
   closeButton.setAttribute('aria-label', '收起');
-  headerActions.append(submitToggleButton, hideButton, closeButton);
+  headerActions.append(submitToggleButton, closeButton);
   header.append(titleWrap, headerActions);
 
   const updateNotice = make('div', 'xg-update-notice');
@@ -929,10 +927,6 @@
     setSubmissionView(false);
     panel.classList.remove('is-open');
   });
-  hideButton.addEventListener('click', function () {
-    setSubmissionView(false);
-    setPageHidden(true);
-  });
   searchButton.addEventListener('click', function () { void search(); });
   searchInput.addEventListener('input', function () {
     clearSearchButton.hidden = !searchInput.value;
@@ -966,6 +960,10 @@
   });
   document.addEventListener('pointerdown', function (event) {
     if (!tagSearch.contains(event.target)) hideTagSearchOptions();
+    if (panel.classList.contains('is-open') && !panel.contains(event.target) && !launcher.contains(event.target)) {
+      setSubmissionView(false);
+      panel.classList.remove('is-open');
+    }
   });
 
   restoreSubmissionDraft();
@@ -1004,7 +1002,7 @@
     '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
     '.xg-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 12px 16px;background:#f3ce49;border-bottom:1px solid #171410;touch-action:none;user-select:none;cursor:grab}',
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
-    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-submit-toggle,.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;white-space:nowrap;cursor:pointer}.xg-submit-toggle.is-active{background:#171410;color:white}',
+    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-submit-toggle{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;white-space:nowrap;cursor:pointer}.xg-submit-toggle.is-active{background:#171410;color:white}',
     '.xg-close{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer}',
     '.xg-update-notice{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid #171410;background:#fff3bf}',
     '.xg-update-notice[hidden]{display:none}.xg-update-notice strong,.xg-update-notice small{display:block}.xg-update-notice strong{font-size:11px}.xg-update-notice small{margin-top:2px;color:#746c61;font-size:9px}',
