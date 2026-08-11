@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.0
+// @version      0.9.1
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -281,6 +281,7 @@
   let submissionTagGroups = [];
   let selectedSubmissionTags = [];
   let expandedSubmissionTagId = '';
+  let submissionAllTagsExpanded = false;
   let submissionTagsLoaded = false;
   let submissionSending = false;
 
@@ -455,7 +456,8 @@
       submissionTags.append(make('p', 'xg-submission-tag-empty', '暂时没有可选标签，可以在下面建议新标签。'));
       return;
     }
-    submissionTagGroups.forEach(function (group) {
+    const visibleGroups = submissionAllTagsExpanded ? submissionTagGroups : submissionTagGroups.slice(0, 5);
+    visibleGroups.forEach(function (group) {
       const tagGroup = make('div', 'xg-submission-tag-group');
       const parentRow = make('div', 'xg-submission-tag-row');
       parentRow.append(submissionTagButton(group, group.isParent));
@@ -476,6 +478,23 @@
       }
       submissionTags.append(tagGroup);
     });
+    if (submissionTagGroups.length > 5) {
+      const remaining = submissionTagGroups.length - 5;
+      const moreButton = make(
+        'button',
+        'xg-submission-tags-more',
+        submissionAllTagsExpanded ? '收起标签 ↑' : '展开其余 ' + remaining + ' 个标签 ↓',
+      );
+      moreButton.type = 'button';
+      moreButton.addEventListener('click', function () {
+        submissionAllTagsExpanded = !submissionAllTagsExpanded;
+        if (!submissionAllTagsExpanded && !submissionTagGroups.slice(0, 5).some(function (group) { return group.id === expandedSubmissionTagId; })) {
+          expandedSubmissionTagId = '';
+        }
+        renderSubmissionTags();
+      });
+      submissionTags.append(moreButton);
+    }
   }
 
   async function loadSubmissionTags() {
@@ -516,6 +535,7 @@
     submissionSuggestedTag.value = '';
     selectedSubmissionTags = [];
     expandedSubmissionTagId = '';
+    submissionAllTagsExpanded = false;
     GM_setValue(SUBMISSION_DRAFT_KEY, {});
     renderSubmissionTags();
   }
@@ -1041,6 +1061,7 @@
     '.xg-submission-row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:9px}',
     '.xg-submission-tag-field{min-width:0;margin:0;padding:10px;border:1px solid rgba(23,20,16,.3);background:white}.xg-submission-tag-field legend{padding:0 5px;color:#4f4941;font-size:10px;font-weight:800}',
     '.xg-submission-tags{display:grid;gap:7px;max-height:190px;overflow:auto}.xg-submission-tag-group{display:grid;gap:6px}.xg-submission-tag-row{display:flex;gap:5px}.xg-submission-tag-row>button:first-child{min-width:0;flex:1;text-align:left}.xg-submission-tag-row button,.xg-submission-tag-children button{border:1px solid rgba(23,20,16,.3);padding:6px 7px;background:#fffaf0;color:#171410;font-size:9px;cursor:pointer}.xg-submission-tag-row button.is-selected,.xg-submission-tag-children button.is-selected{border-color:#171410;background:#171410;color:white}.xg-submission-tag-expand{flex:0 0 auto}.xg-submission-tag-children{display:flex;flex-wrap:wrap;gap:5px;padding:7px;background:#fff8dc}',
+    '.xg-submission-tags-more{width:100%;border:1px dashed rgba(23,20,16,.45);padding:7px;background:#fff3bf;color:#171410;font-size:10px;font-weight:800;cursor:pointer}',
     '.xg-submission-tag-empty{margin:0;padding:10px;color:#746c61;text-align:center;font-size:10px}.xg-submission-status{margin:0;padding:8px 9px;background:#f4efe5;color:#625b52;font-size:10px}.xg-submission-status.is-error{background:#ffe8e2;color:#a42b20}.xg-submission-status.is-success{background:#eef8dc;color:#4d701f}',
     '.xg-submission-submit{border:1px solid #171410;padding:9px;background:#3667e9;color:white;font-weight:800;cursor:pointer}.xg-submission-submit:disabled{cursor:wait;opacity:.6}',
   ].join(''));
