@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.7.8
+// @version      0.8.0
 // @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -32,16 +32,18 @@
     apiBase: GM_getValue('apiBase', 'http://127.0.0.1:4000').replace(/\/$/, ''),
     cooldownMs: 3000,
   };
-  const RELEASE_URL = 'https://9765366.cn/userscripts/release.json';
+  const RELEASE_URL = /^http:\/\/(?:127\.0\.0\.1|localhost):4000$/.test(CONFIG.apiBase)
+    ? CONFIG.apiBase.replace(/:4000$/, ':3000') + '/userscripts/release.json'
+    : 'https://9765366.cn/userscripts/release.json';
   const RELEASE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
     panel: 'xiaoguiPanelPosition',
   };
 
-  function requestUrl(method, url) {
+  function requestUrl(method, url, body) {
     return new Promise(function (resolve, reject) {
-      GM_xmlhttpRequest({
+      const options = {
         method: method,
         url: url,
         timeout: 8000,
@@ -58,12 +60,17 @@
         },
         onerror: reject,
         ontimeout: function () { reject(new Error('请求超时')); },
-      });
+      };
+      if (body !== undefined) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.data = JSON.stringify(body);
+      }
+      GM_xmlhttpRequest(options);
     });
   }
 
-  function request(method, path) {
-    return requestUrl(method, CONFIG.apiBase + path);
+  function request(method, path, body) {
+    return requestUrl(method, CONFIG.apiBase + path, body);
   }
 
   function compareVersions(left, right) {
@@ -125,6 +132,9 @@
   const launcher = make('button', 'xg-launcher', '🐢 小龟烂梗');
   launcher.type = 'button';
   launcher.title = '点击打开，按住可拖动';
+  const updateBadge = make('span', 'xg-launcher-badge', 'NEW');
+  updateBadge.hidden = true;
+  launcher.append(updateBadge);
   const panel = make('section', 'xg-panel');
   panel.setAttribute('aria-label', '溺水小龟烂梗助手');
 
@@ -193,6 +203,15 @@
   let expandedQuickTagId = '';
   let tagSearchTimer = 0;
 
+  const previousRunVersion = String(GM_getValue('lastRunVersion', ''));
+  const hadPreviousInstall = Boolean(previousRunVersion || GM_getValue('releaseCheckedAt', 0));
+  GM_setValue('lastRunVersion', installedVersion);
+
+  function setUpdateBadge(visible) {
+    updateBadge.hidden = !visible;
+    launcher.classList.toggle('has-update', visible);
+  }
+
   function showUpdateNotice(release) {
     updateNotice.replaceChildren();
     const copy = make('div');
@@ -206,6 +225,28 @@
     link.rel = 'noopener noreferrer';
     updateNotice.append(copy, link);
     updateNotice.hidden = false;
+    setUpdateBadge(true);
+  }
+
+  function showInstalledReleaseNotice(release) {
+    if (!installedVersion || release.version !== installedVersion || GM_getValue('acknowledgedVersion', '') === installedVersion) return false;
+    updateNotice.replaceChildren();
+    const copy = make('div');
+    copy.append(
+      make('strong', '', hadPreviousInstall ? '已更新到 v' + installedVersion : '欢迎使用 v' + installedVersion),
+      make('small', '', [release.title].concat(release.notes || []).filter(Boolean).join(' · ')),
+    );
+    const dismiss = make('button', 'xg-update-dismiss', '知道了');
+    dismiss.type = 'button';
+    dismiss.addEventListener('click', function () {
+      GM_setValue('acknowledgedVersion', installedVersion);
+      updateNotice.hidden = true;
+      setUpdateBadge(false);
+    });
+    updateNotice.append(copy, dismiss);
+    updateNotice.hidden = false;
+    setUpdateBadge(true);
+    return true;
   }
 
   async function checkForUpdate(force) {
@@ -218,7 +259,10 @@
         showUpdateNotice(release);
         return 'update';
       }
-      updateNotice.hidden = true;
+      if (!showInstalledReleaseNotice(release)) {
+        updateNotice.hidden = true;
+        setUpdateBadge(false);
+      }
       return 'current';
     } catch (error) {
       console.warn('[小龟烂梗助手] 版本检查失败', error);
@@ -231,6 +275,38 @@
       x: window.innerWidth - launcher.offsetWidth - 18,
       y: window.innerHeight - launcher.offsetHeight - 158,
     };
+  }
+
+  function localDateKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
+  function anonymousInstallId() {
+    const saved = String(GM_getValue('anonymousInstallId', ''));
+    if (/^[A-Za-z0-9_-]{16,128}$/.test(saved)) return saved;
+    const generated = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Array.from(crypto.getRandomValues(new Uint32Array(4)), function (value) { return value.toString(36); }).join('-');
+    GM_setValue('anonymousInstallId', generated);
+    return generated;
+  }
+
+  async function reportEngagement() {
+    const today = localDateKey();
+    if (GM_getValue('engagementReportedDate', '') === today) return;
+    try {
+      await request('POST', '/api/analytics/userscript-activity', {
+        installId: anonymousInstallId(),
+        version: installedVersion || 'unknown',
+      });
+      GM_setValue('engagementReportedDate', today);
+    } catch (error) {
+      console.warn('[小龟烂梗助手] 活跃统计失败', error);
+    }
   }
 
   function defaultPanelPosition() {
@@ -572,6 +648,7 @@
     if (suppressLauncherClick || pageHidden) return;
     panel.classList.toggle('is-open');
     if (panel.classList.contains('is-open')) {
+      void reportEngagement();
       window.requestAnimationFrame(function () {
         applyPanelPosition();
         void checkForUpdate(true);
@@ -645,6 +722,7 @@
   GM_addStyle([
     '.xg-launcher{position:fixed;z-index:2147483646;touch-action:none;user-select:none;border:1px solid #171410;border-radius:999px;padding:10px 15px;background:#f3ce49;color:#171410;box-shadow:4px 4px 0 #171410;font:800 13px/1.2 system-ui;cursor:grab}',
     '.xg-launcher.is-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
+    '.xg-launcher-badge{position:absolute;top:-8px;right:-8px;border:1px solid #171410;border-radius:999px;padding:3px 5px;background:#ff315f;color:white;box-shadow:2px 2px 0 #171410;font:900 8px/1 system-ui;letter-spacing:.04em}.xg-launcher-badge[hidden]{display:none}',
     '.xg-panel{display:none;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;font:14px/1.5 system-ui}',
     '.xg-panel.is-open{display:flex;flex-direction:column}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35}',
     '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
@@ -654,7 +732,7 @@
     '.xg-close{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer}',
     '.xg-update-notice{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid #171410;background:#fff3bf}',
     '.xg-update-notice[hidden]{display:none}.xg-update-notice strong,.xg-update-notice small{display:block}.xg-update-notice strong{font-size:11px}.xg-update-notice small{margin-top:2px;color:#746c61;font-size:9px}',
-    '.xg-update-notice a{flex:0 0 auto;border:1px solid #171410;padding:5px 8px;background:#ff5c35;color:white;text-decoration:none;font-size:10px;font-weight:800}',
+    '.xg-update-notice a,.xg-update-dismiss{flex:0 0 auto;border:1px solid #171410;padding:5px 8px;background:#ff5c35;color:white;text-decoration:none;font-size:10px;font-weight:800;cursor:pointer}',
     '.xg-search{display:flex;gap:8px;padding:12px;border-bottom:1px solid rgba(23,20,16,.18)}',
     '.xg-search-input-wrap,.xg-tag-search-input-wrap{position:relative;min-width:0}',
     '.xg-search-input-wrap{flex:1}.xg-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid #171410;padding:9px 29px 9px 10px;background:white;color:#171410}',

@@ -101,12 +101,16 @@ export type TrafficAnalytics = {
     peakDailyVisits: number
     todayUserscriptInstalls: number
     totalUserscriptInstalls: number
+    todayUserscriptActive: number
+    userscriptActive7Days: number
+    userscriptActive30Days: number
   }
   points: Array<{
     date: string
     visits: number
     visitors: number
     userscriptInstalls: number
+    userscriptActive: number
   }>
 }
 

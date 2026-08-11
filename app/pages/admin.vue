@@ -171,7 +171,12 @@ const analyticsChart = computed(() => {
   const top = 18
   const bottom = 38
   const points = analytics.value?.points ?? []
-  const maxValue = Math.max(1, ...points.flatMap((point) => [point.visits, point.visitors, point.userscriptInstalls]))
+  const maxValue = Math.max(1, ...points.flatMap((point) => [
+    point.visits,
+    point.visitors,
+    point.userscriptInstalls,
+    point.userscriptActive,
+  ]))
   const plotWidth = width - left - right
   const plotHeight = height - top - bottom
   const position = (value: number, index: number) => ({
@@ -183,8 +188,9 @@ const analyticsChart = computed(() => {
     ...position(point.visits, index),
     visitorY: position(point.visitors, index).y,
     installY: position(point.userscriptInstalls, index).y,
+    activeY: position(point.userscriptActive, index).y,
   }))
-  const line = (key: 'y' | 'visitorY' | 'installY') => mapped.map((point) => `${point.x},${point[key]}`).join(' ')
+  const line = (key: 'y' | 'visitorY' | 'installY' | 'activeY') => mapped.map((point) => `${point.x},${point[key]}`).join(' ')
   const labelIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].filter((index) => index >= 0)
   return {
     width,
@@ -199,6 +205,7 @@ const analyticsChart = computed(() => {
     visitsLine: line('y'),
     visitorsLine: line('visitorY'),
     installsLine: line('installY'),
+    activeLine: line('activeY'),
     dateLabels: labelIndexes.map((index) => ({ index, x: mapped[index]?.x ?? left, date: points[index]?.date ?? '' })),
     grid: [0, .25, .5, .75, 1].map((ratio) => ({
       y: top + plotHeight - ratio * plotHeight,
@@ -1233,6 +1240,9 @@ onBeforeUnmount(() => {
             <article><span>今日访问量</span><strong>{{ formatCount(analytics.summary.todayVisits) }}</strong><small>今天打开首页的次数</small></article>
             <article><span>今日独立访客</span><strong>{{ formatCount(analytics.summary.todayVisitors) }}</strong><small>按匿名 IP 估算</small></article>
             <article><span>今日助手安装点击</span><strong>{{ formatCount(analytics.summary.todayUserscriptInstalls) }}</strong><small>同一匿名 IP 当天只计一次</small></article>
+            <article><span>今日活跃助手</span><strong>{{ formatCount(analytics.summary.todayUserscriptActive) }}</strong><small>同一匿名安装标识当天只计一次</small></article>
+            <article><span>近 7 日活跃助手</span><strong>{{ formatCount(analytics.summary.userscriptActive7Days) }}</strong><small>最近 7 天运行过的不同助手</small></article>
+            <article><span>近 30 日活跃助手</span><strong>{{ formatCount(analytics.summary.userscriptActive30Days) }}</strong><small>最近 30 天运行过的不同助手</small></article>
             <article><span>累计访问量</span><strong>{{ formatCount(analytics.summary.totalVisits) }}</strong><small>从统计功能上线起累计</small></article>
             <article><span>累计助手安装点击</span><strong>{{ formatCount(analytics.summary.totalUserscriptInstalls) }}</strong><small>不包含油猴自动更新检查</small></article>
             <article><span>单日最高访问量</span><strong>{{ formatCount(analytics.summary.peakDailyVisits) }}</strong><small>历史最高的一天</small></article>
@@ -1259,6 +1269,7 @@ onBeforeUnmount(() => {
               <span class="visits">访问量</span>
               <span class="visitors">独立访客</span>
               <span class="installs">助手安装点击</span>
+              <span class="active">助手每日活跃</span>
             </div>
             <div class="admin-analytics-chart-scroll">
               <svg
@@ -1277,10 +1288,12 @@ onBeforeUnmount(() => {
                 <polyline class="chart-line visits" :points="analyticsChart.visitsLine" />
                 <polyline class="chart-line visitors" :points="analyticsChart.visitorsLine" />
                 <polyline class="chart-line installs" :points="analyticsChart.installsLine" />
+                <polyline class="chart-line active" :points="analyticsChart.activeLine" />
                 <g v-for="point in analyticsChart.points" :key="point.date" class="chart-points">
                   <circle class="visits" :cx="point.x" :cy="point.y" r="3.5"><title>{{ point.date }}：访问量 {{ point.visits }}</title></circle>
                   <circle class="visitors" :cx="point.x" :cy="point.visitorY" r="3.5"><title>{{ point.date }}：独立访客 {{ point.visitors }}</title></circle>
                   <circle class="installs" :cx="point.x" :cy="point.installY" r="3.5"><title>{{ point.date }}：助手安装点击 {{ point.userscriptInstalls }}</title></circle>
+                  <circle class="active" :cx="point.x" :cy="point.activeY" r="3.5"><title>{{ point.date }}：助手每日活跃 {{ point.userscriptActive }}</title></circle>
                 </g>
                 <g class="chart-dates">
                   <text v-for="label in analyticsChart.dateLabels" :key="label.index" :x="label.x" :y="analyticsChart.height - 10">{{ formatAnalyticsDate(label.date) }}</text>
@@ -1296,19 +1309,20 @@ onBeforeUnmount(() => {
             </div>
             <div class="admin-analytics-table-scroll">
               <table>
-                <thead><tr><th>日期</th><th>访问量</th><th>独立访客</th><th>助手安装点击</th></tr></thead>
+                <thead><tr><th>日期</th><th>访问量</th><th>独立访客</th><th>助手安装点击</th><th>活跃助手</th></tr></thead>
                 <tbody>
                   <tr v-for="point in analyticsRows" :key="point.date">
                     <td>{{ point.date }}</td>
                     <td>{{ formatCount(point.visits) }}</td>
                     <td>{{ formatCount(point.visitors) }}</td>
                     <td>{{ formatCount(point.userscriptInstalls) }}</td>
+                    <td>{{ formatCount(point.userscriptActive) }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </section>
-          <p class="admin-analytics-privacy">隐私说明：系统不保存原始 IP，只保存每天重新生成的匿名标识；独立访客是估算值，不等同于精确人数。</p>
+          <p class="admin-analytics-privacy">隐私说明：系统不保存原始 IP；助手只在本地生成随机安装标识，后端保存其不可逆摘要，用于区分首次启用和每日活跃，不收集斗鱼账号。</p>
         </section>
 
         <section v-else-if="activePanel === 'joke-review'">

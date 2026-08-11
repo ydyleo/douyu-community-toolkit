@@ -2,7 +2,6 @@ name: Frontend CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -31,3 +30,6 @@ jobs:
 
       - name: Generate static site
         run: npm run generate
+
+      - name: Check patch whitespace
+        run: git diff --check

@@ -8,6 +8,7 @@
     "build": "npm run check:userscript && nuxt build",
     "generate": "npm run check:userscript && nuxt generate",
     "check:userscript": "node scripts/check-userscript-release.mjs",
+    "release:check": "npm run typecheck && npm run generate && git diff --check",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "postinstall": "nuxt prepare"
