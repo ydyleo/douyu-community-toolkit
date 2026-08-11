@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.8.0
-// @description  在斗鱼直播间搜索、复制、填入和一键发送小龟烂梗
+// @version      0.9.0
+// @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
 // @homepageURL  https://9765366.cn/
@@ -36,6 +36,8 @@
     ? CONFIG.apiBase.replace(/:4000$/, ':3000') + '/userscripts/release.json'
     : 'https://9765366.cn/userscripts/release.json';
   const RELEASE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+  const SUBMISSION_DRAFT_KEY = 'xiaoguiSubmissionDraft';
+  const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
     panel: 'xiaoguiPanelPosition',
@@ -49,7 +51,14 @@
         timeout: 8000,
         onload: function (response) {
           if (response.status < 200 || response.status >= 300) {
-            reject(new Error('HTTP ' + response.status));
+            let message = 'HTTP ' + response.status;
+            try {
+              const payload = JSON.parse(response.responseText);
+              if (payload && payload.message) message = payload.message;
+            } catch (_) {}
+            const error = new Error(message);
+            error.status = response.status;
+            reject(error);
             return;
           }
           try {
@@ -143,12 +152,14 @@
   const installedVersion = GM_info && GM_info.script ? GM_info.script.version : '';
   titleWrap.append(make('strong', '', '小龟烂梗助手'), make('small', '', 'v' + installedVersion + ' · 当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动'));
   const headerActions = make('div', 'xg-header-actions');
+  const submitToggleButton = make('button', 'xg-submit-toggle', '＋ 投稿');
+  submitToggleButton.type = 'button';
   const hideButton = make('button', 'xg-hide', '本页隐藏');
   hideButton.type = 'button';
   const closeButton = make('button', 'xg-close', '×');
   closeButton.type = 'button';
   closeButton.setAttribute('aria-label', '收起');
-  headerActions.append(hideButton, closeButton);
+  headerActions.append(submitToggleButton, hideButton, closeButton);
   header.append(titleWrap, headerActions);
 
   const updateNotice = make('div', 'xg-update-notice');
@@ -191,7 +202,74 @@
 
   const status = make('p', 'xg-status', '输入关键词，从小龟烂梗库搜索。');
   const results = make('div', 'xg-results');
-  panel.append(header, updateNotice, searchRow, quickTags, quickTagChildren, tagSearch, status, results);
+  const browseView = make('div', 'xg-browse-view');
+  browseView.append(searchRow, quickTags, quickTagChildren, tagSearch, status, results);
+
+  const submissionView = make('div', 'xg-submission-view');
+  submissionView.hidden = true;
+  const submissionHeading = make('div', 'xg-submission-heading');
+  const submissionBackButton = make('button', 'xg-submission-back', '← 返回烂梗库');
+  submissionBackButton.type = 'button';
+  const submissionHeadingCopy = make('div');
+  submissionHeadingCopy.append(
+    make('strong', '', '投递一条烂梗'),
+    make('small', '', '提交后进入后台审核，通过后才会公开。'),
+  );
+  submissionHeading.append(submissionBackButton, submissionHeadingCopy);
+
+  const submissionForm = make('form', 'xg-submission-form');
+  const submissionTextLabel = make('label', '', '梗内容');
+  const submissionText = make('textarea');
+  submissionText.maxLength = 240;
+  submissionText.rows = 4;
+  submissionText.placeholder = '原话是什么？';
+  submissionText.required = true;
+  submissionTextLabel.append(submissionText);
+
+  const submissionRow = make('div', 'xg-submission-row');
+  const submissionCategoryLabel = make('label', '', '分类');
+  const submissionCategory = make('select');
+  SUBMISSION_CATEGORIES.forEach(function (category) {
+    const option = make('option', '', category);
+    option.value = category;
+    submissionCategory.append(option);
+  });
+  submissionCategoryLabel.append(submissionCategory);
+  const submissionSourceLabel = make('label', '', '出处（选填）');
+  const submissionSource = make('input');
+  submissionSource.type = 'text';
+  submissionSource.maxLength = 60;
+  submissionSource.placeholder = '日期 / 切片 / 场次';
+  submissionSourceLabel.append(submissionSource);
+  submissionRow.append(submissionCategoryLabel, submissionSourceLabel);
+
+  const submissionTagField = make('fieldset', 'xg-submission-tag-field');
+  const submissionTagLegend = make('legend', '', '选择标签 · 最多 5 个');
+  const submissionTags = make('div', 'xg-submission-tags');
+  submissionTags.append(make('p', 'xg-submission-tag-empty', '打开投稿页后加载标签……'));
+  submissionTagField.append(submissionTagLegend, submissionTags);
+
+  const submissionSuggestedLabel = make('label', '', '建议新标签（选填）');
+  const submissionSuggestedTag = make('input');
+  submissionSuggestedTag.type = 'text';
+  submissionSuggestedTag.maxLength = 24;
+  submissionSuggestedTag.placeholder = '找不到合适标签时填写，不用输入 #';
+  submissionSuggestedLabel.append(submissionSuggestedTag);
+
+  const submissionStatus = make('p', 'xg-submission-status', '草稿会自动保存在油猴本地。');
+  const submissionSubmitButton = make('button', 'xg-submission-submit', '提交审核');
+  submissionSubmitButton.type = 'submit';
+  submissionForm.append(
+    submissionTextLabel,
+    submissionRow,
+    submissionTagField,
+    submissionSuggestedLabel,
+    submissionStatus,
+    submissionSubmitButton,
+  );
+  submissionView.append(submissionHeading, submissionForm);
+
+  panel.append(header, updateNotice, browseView, submissionView);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
@@ -202,6 +280,11 @@
   let quickTagItems = [];
   let expandedQuickTagId = '';
   let tagSearchTimer = 0;
+  let submissionTagGroups = [];
+  let selectedSubmissionTags = [];
+  let expandedSubmissionTagId = '';
+  let submissionTagsLoaded = false;
+  let submissionSending = false;
 
   const previousRunVersion = String(GM_getValue('lastRunVersion', ''));
   const hadPreviousInstall = Boolean(previousRunVersion || GM_getValue('releaseCheckedAt', 0));
@@ -306,6 +389,182 @@
       GM_setValue('engagementReportedDate', today);
     } catch (error) {
       console.warn('[小龟烂梗助手] 活跃统计失败', error);
+    }
+  }
+
+  function showSubmissionStatus(message, isError) {
+    submissionStatus.textContent = message;
+    submissionStatus.classList.toggle('is-error', Boolean(isError));
+    submissionStatus.classList.toggle('is-success', !isError && message.indexOf('成功') >= 0);
+  }
+
+  function normalizedTagName(value) {
+    return String(value || '').trim().replace(/^#+\s*/, '').trim().slice(0, 24);
+  }
+
+  function submissionHasTag(name) {
+    const key = name.toLocaleLowerCase('zh-CN');
+    return selectedSubmissionTags.some(function (tag) { return tag.toLocaleLowerCase('zh-CN') === key; });
+  }
+
+  function saveSubmissionDraft() {
+    GM_setValue(SUBMISSION_DRAFT_KEY, {
+      text: submissionText.value,
+      category: submissionCategory.value,
+      source: submissionSource.value,
+      tags: selectedSubmissionTags,
+      suggestedTag: submissionSuggestedTag.value,
+    });
+  }
+
+  function restoreSubmissionDraft() {
+    const draft = GM_getValue(SUBMISSION_DRAFT_KEY, null);
+    if (!draft || typeof draft !== 'object') return;
+    submissionText.value = String(draft.text || '').slice(0, 240);
+    submissionCategory.value = SUBMISSION_CATEGORIES.includes(draft.category) ? draft.category : SUBMISSION_CATEGORIES[0];
+    submissionSource.value = String(draft.source || '').slice(0, 60);
+    submissionSuggestedTag.value = normalizedTagName(draft.suggestedTag);
+    selectedSubmissionTags = Array.isArray(draft.tags)
+      ? draft.tags.map(normalizedTagName).filter(Boolean).slice(0, 5)
+      : [];
+  }
+
+  function toggleSubmissionTag(name) {
+    const existingIndex = selectedSubmissionTags.findIndex(function (tag) {
+      return tag.toLocaleLowerCase('zh-CN') === name.toLocaleLowerCase('zh-CN');
+    });
+    if (existingIndex >= 0) selectedSubmissionTags.splice(existingIndex, 1);
+    else if (selectedSubmissionTags.length >= 5) {
+      showSubmissionStatus('最多选择 5 个标签。', true);
+      return;
+    } else selectedSubmissionTags.push(name);
+    showSubmissionStatus('已选择 ' + selectedSubmissionTags.length + ' / 5 个标签。');
+    saveSubmissionDraft();
+    renderSubmissionTags();
+  }
+
+  function submissionTagButton(item, isParent) {
+    const label = (isParent ? '★ ' : '') + '#' + item.name + ' · ' + item.count;
+    const button = make('button', submissionHasTag(item.name) ? 'is-selected' : '', label);
+    button.type = 'button';
+    button.addEventListener('click', function () { toggleSubmissionTag(item.name); });
+    return button;
+  }
+
+  function renderSubmissionTags() {
+    submissionTags.replaceChildren();
+    if (!submissionTagGroups.length) {
+      submissionTags.append(make('p', 'xg-submission-tag-empty', '暂时没有可选标签，可以在下面建议新标签。'));
+      return;
+    }
+    submissionTagGroups.forEach(function (group) {
+      const tagGroup = make('div', 'xg-submission-tag-group');
+      const parentRow = make('div', 'xg-submission-tag-row');
+      parentRow.append(submissionTagButton(group, group.isParent));
+      if (group.isParent && (group.children || []).length) {
+        const expandButton = make('button', 'xg-submission-tag-expand', expandedSubmissionTagId === group.id ? '收起 −' : '子标签 ＋');
+        expandButton.type = 'button';
+        expandButton.addEventListener('click', function () {
+          expandedSubmissionTagId = expandedSubmissionTagId === group.id ? '' : group.id;
+          renderSubmissionTags();
+        });
+        parentRow.append(expandButton);
+      }
+      tagGroup.append(parentRow);
+      if (expandedSubmissionTagId === group.id) {
+        const children = make('div', 'xg-submission-tag-children');
+        (group.children || []).forEach(function (child) { children.append(submissionTagButton(child, false)); });
+        tagGroup.append(children);
+      }
+      submissionTags.append(tagGroup);
+    });
+  }
+
+  async function loadSubmissionTags() {
+    if (submissionTagsLoaded) {
+      renderSubmissionTags();
+      return;
+    }
+    submissionTags.replaceChildren(make('p', 'xg-submission-tag-empty', '正在加载标签……'));
+    try {
+      const data = await request('GET', '/api/tags?limit=100');
+      submissionTagGroups = data.items || [];
+      submissionTagsLoaded = true;
+      renderSubmissionTags();
+    } catch (error) {
+      console.error('[小龟烂梗助手] 投稿标签加载失败', error);
+      submissionTags.replaceChildren(make('p', 'xg-submission-tag-empty', '标签加载失败，仍可不选标签直接投稿。'));
+    }
+  }
+
+  function setSubmissionView(active) {
+    browseView.hidden = active;
+    submissionView.hidden = !active;
+    submitToggleButton.classList.toggle('is-active', active);
+    submitToggleButton.textContent = active ? '投稿中' : '＋ 投稿';
+    if (active) {
+      showSubmissionStatus(selectedSubmissionTags.length
+        ? '草稿已保留，已选择 ' + selectedSubmissionTags.length + ' / 5 个标签。'
+        : '草稿会自动保存在油猴本地。');
+      void loadSubmissionTags();
+      window.setTimeout(function () { submissionText.focus(); }, 0);
+    }
+  }
+
+  function clearSubmissionDraft() {
+    submissionText.value = '';
+    submissionCategory.value = SUBMISSION_CATEGORIES[0];
+    submissionSource.value = '';
+    submissionSuggestedTag.value = '';
+    selectedSubmissionTags = [];
+    expandedSubmissionTagId = '';
+    GM_setValue(SUBMISSION_DRAFT_KEY, {});
+    renderSubmissionTags();
+  }
+
+  async function submitJokeDraft() {
+    if (submissionSending) return;
+    const text = submissionText.value.trim();
+    if (!text) {
+      showSubmissionStatus('先写下这条烂梗。', true);
+      submissionText.focus();
+      return;
+    }
+    const suggestedTag = normalizedTagName(submissionSuggestedTag.value);
+    const tags = selectedSubmissionTags.slice();
+    if (suggestedTag && !tags.some(function (tag) { return tag.toLocaleLowerCase('zh-CN') === suggestedTag.toLocaleLowerCase('zh-CN'); })) {
+      if (tags.length >= 5) {
+        showSubmissionStatus('已有 5 个标签，请取消一个后再添加建议标签。', true);
+        return;
+      }
+      tags.push(suggestedTag);
+    }
+    submissionSending = true;
+    submissionSubmitButton.disabled = true;
+    submissionSubmitButton.textContent = '提交中……';
+    showSubmissionStatus('正在提交到审核区……');
+    try {
+      await request('POST', '/api/submissions', {
+        text: text,
+        category: submissionCategory.value,
+        source: submissionSource.value.trim() || undefined,
+        tags: tags,
+      });
+      clearSubmissionDraft();
+      showSubmissionStatus('投稿成功，审核通过后会公开。');
+      window.setTimeout(function () {
+        setSubmissionView(false);
+        showStatus('投稿成功，已经进入待审核区。');
+      }, 900);
+    } catch (error) {
+      if (error.status === 409) showSubmissionStatus('这条烂梗已收录或正在审核。', true);
+      else if (error.status === 429) showSubmissionStatus('投稿太快了，请稍后再试。', true);
+      else if (error.status === 400) showSubmissionStatus(error.message || '请检查投稿内容。', true);
+      else showSubmissionStatus('投稿失败，草稿已保留，请稍后重试。', true);
+    } finally {
+      submissionSending = false;
+      submissionSubmitButton.disabled = false;
+      submissionSubmitButton.textContent = '提交审核';
     }
   }
 
@@ -657,8 +916,23 @@
       });
     }
   });
-  closeButton.addEventListener('click', function () { panel.classList.remove('is-open'); });
-  hideButton.addEventListener('click', function () { setPageHidden(true); });
+  submitToggleButton.addEventListener('click', function () { setSubmissionView(submissionView.hidden); });
+  submissionBackButton.addEventListener('click', function () { setSubmissionView(false); });
+  submissionForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    void submitJokeDraft();
+  });
+  [submissionText, submissionCategory, submissionSource, submissionSuggestedTag].forEach(function (field) {
+    field.addEventListener(field === submissionCategory ? 'change' : 'input', saveSubmissionDraft);
+  });
+  closeButton.addEventListener('click', function () {
+    setSubmissionView(false);
+    panel.classList.remove('is-open');
+  });
+  hideButton.addEventListener('click', function () {
+    setSubmissionView(false);
+    setPageHidden(true);
+  });
   searchButton.addEventListener('click', function () { void search(); });
   searchInput.addEventListener('input', function () {
     clearSearchButton.hidden = !searchInput.value;
@@ -694,6 +968,8 @@
     if (!tagSearch.contains(event.target)) hideTagSearchOptions();
   });
 
+  restoreSubmissionDraft();
+
   GM_registerMenuCommand('隐藏 / 恢复小龟助手', function () {
     setPageHidden(!pageHidden);
   });
@@ -728,11 +1004,12 @@
     '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
     '.xg-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 12px 16px;background:#f3ce49;border-bottom:1px solid #171410;touch-action:none;user-select:none;cursor:grab}',
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
-    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;cursor:pointer}',
+    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-submit-toggle,.xg-hide{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;white-space:nowrap;cursor:pointer}.xg-submit-toggle.is-active{background:#171410;color:white}',
     '.xg-close{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer}',
     '.xg-update-notice{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid #171410;background:#fff3bf}',
     '.xg-update-notice[hidden]{display:none}.xg-update-notice strong,.xg-update-notice small{display:block}.xg-update-notice strong{font-size:11px}.xg-update-notice small{margin-top:2px;color:#746c61;font-size:9px}',
     '.xg-update-notice a,.xg-update-dismiss{flex:0 0 auto;border:1px solid #171410;padding:5px 8px;background:#ff5c35;color:white;text-decoration:none;font-size:10px;font-weight:800;cursor:pointer}',
+    '.xg-browse-view{display:flex;min-height:0;flex:1 1 auto;flex-direction:column}.xg-browse-view[hidden]{display:none}',
     '.xg-search{display:flex;gap:8px;padding:12px;border-bottom:1px solid rgba(23,20,16,.18)}',
     '.xg-search-input-wrap,.xg-tag-search-input-wrap{position:relative;min-width:0}',
     '.xg-search-input-wrap{flex:1}.xg-search-input-wrap input{box-sizing:border-box;width:100%;border:1px solid #171410;padding:9px 29px 9px 10px;background:white;color:#171410}',
@@ -759,6 +1036,15 @@
     '.xg-actions{display:flex;gap:7px;margin-top:10px}.xg-actions button{flex:1;border:1px solid #171410;padding:7px;cursor:pointer}',
     '.xg-fill{background:#fffaf0;color:#171410}.xg-send{background:#3667e9;color:white}.xg-send:disabled{opacity:.55}',
     '.xg-empty{padding:40px 15px;text-align:center;color:#746c61}',
+    '.xg-submission-view{min-height:0;flex:1 1 auto;overflow:auto;background:#fffaf0}.xg-submission-view[hidden]{display:none}',
+    '.xg-submission-heading{position:sticky;z-index:2;top:0;display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid #171410;background:#fff3bf}.xg-submission-heading strong,.xg-submission-heading small{display:block}.xg-submission-heading strong{font-size:13px}.xg-submission-heading small{margin-top:2px;color:#746c61;font-size:9px}',
+    '.xg-submission-back{flex:0 0 auto;border:1px solid #171410;padding:6px 8px;background:white;color:#171410;font-size:10px;cursor:pointer}',
+    '.xg-submission-form{display:grid;gap:12px;padding:13px}.xg-submission-form label{display:grid;gap:5px;color:#4f4941;font-size:10px;font-weight:800}.xg-submission-form input,.xg-submission-form textarea,.xg-submission-form select{box-sizing:border-box;width:100%;border:1px solid #171410;border-radius:0;padding:8px 9px;background:white;color:#171410;font:12px/1.45 system-ui}.xg-submission-form textarea{min-height:82px;resize:vertical}',
+    '.xg-submission-row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:9px}',
+    '.xg-submission-tag-field{min-width:0;margin:0;padding:10px;border:1px solid rgba(23,20,16,.3);background:white}.xg-submission-tag-field legend{padding:0 5px;color:#4f4941;font-size:10px;font-weight:800}',
+    '.xg-submission-tags{display:grid;gap:7px;max-height:190px;overflow:auto}.xg-submission-tag-group{display:grid;gap:6px}.xg-submission-tag-row{display:flex;gap:5px}.xg-submission-tag-row>button:first-child{min-width:0;flex:1;text-align:left}.xg-submission-tag-row button,.xg-submission-tag-children button{border:1px solid rgba(23,20,16,.3);padding:6px 7px;background:#fffaf0;color:#171410;font-size:9px;cursor:pointer}.xg-submission-tag-row button.is-selected,.xg-submission-tag-children button.is-selected{border-color:#171410;background:#171410;color:white}.xg-submission-tag-expand{flex:0 0 auto}.xg-submission-tag-children{display:flex;flex-wrap:wrap;gap:5px;padding:7px;background:#fff8dc}',
+    '.xg-submission-tag-empty{margin:0;padding:10px;color:#746c61;text-align:center;font-size:10px}.xg-submission-status{margin:0;padding:8px 9px;background:#f4efe5;color:#625b52;font-size:10px}.xg-submission-status.is-error{background:#ffe8e2;color:#a42b20}.xg-submission-status.is-success{background:#eef8dc;color:#4d701f}',
+    '.xg-submission-submit{border:1px solid #171410;padding:9px;background:#3667e9;color:white;font-weight:800;cursor:pointer}.xg-submission-submit:disabled{cursor:wait;opacity:.6}',
   ].join(''));
 
   makeDraggable(launcher, launcher, POSITION_KEYS.launcher, false);
