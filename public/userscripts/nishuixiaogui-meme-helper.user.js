@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.1
+// @version      0.9.2
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -24,11 +24,21 @@
 (function () {
   'use strict';
 
-  const roomMatch = location.pathname.match(/^\/(?:room\/)?(\d+)(?:\/|$)/);
-  if (!roomMatch) return;
+  const LAUNCHER_ID = 'xiaogui-meme-launcher';
+  const PANEL_ID = 'xiaogui-meme-panel';
+  let assistantInstance = null;
+
+  function currentRoomId() {
+    return location.pathname.match(/^\/(?:room\/)?(\d+)(?:\/|$)/)?.[1] || '';
+  }
+
+  function mountAssistant(initialRoomId) {
+    if (!initialRoomId || assistantInstance) return assistantInstance;
+    document.getElementById(LAUNCHER_ID)?.remove();
+    document.getElementById(PANEL_ID)?.remove();
 
   const CONFIG = {
-    roomId: roomMatch[1],
+    roomId: initialRoomId,
     apiBase: GM_getValue('apiBase', 'http://127.0.0.1:4000').replace(/\/$/, ''),
     cooldownMs: 3000,
   };
@@ -139,18 +149,21 @@
   }
 
   const launcher = make('button', 'xg-launcher', '🐢 小龟烂梗');
+  launcher.id = LAUNCHER_ID;
   launcher.type = 'button';
   launcher.title = '点击打开，按住可拖动';
   const updateBadge = make('span', 'xg-launcher-badge', 'NEW');
   updateBadge.hidden = true;
   launcher.append(updateBadge);
   const panel = make('section', 'xg-panel');
+  panel.id = PANEL_ID;
   panel.setAttribute('aria-label', '溺水小龟烂梗助手');
 
   const header = make('header', 'xg-header');
   const titleWrap = make('div');
   const installedVersion = GM_info && GM_info.script ? GM_info.script.version : '';
-  titleWrap.append(make('strong', '', '小龟烂梗助手'), make('small', '', 'v' + installedVersion + ' · 当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动'));
+  const titleMeta = make('small', '', 'v' + installedVersion + ' · 当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动');
+  titleWrap.append(make('strong', '', '小龟烂梗助手'), titleMeta);
   const headerActions = make('div', 'xg-header-actions');
   const submitToggleButton = make('button', 'xg-submit-toggle', '＋ 投稿');
   submitToggleButton.type = 'button';
@@ -1015,7 +1028,7 @@
 
   GM_addStyle([
     '.xg-launcher{position:fixed;z-index:2147483646;touch-action:none;user-select:none;border:1px solid #171410;border-radius:999px;padding:10px 15px;background:#f3ce49;color:#171410;box-shadow:4px 4px 0 #171410;font:800 13px/1.2 system-ui;cursor:grab}',
-    '.xg-launcher.is-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
+    '.xg-launcher.is-hidden,.xg-launcher.is-route-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
     '.xg-launcher-badge{position:absolute;top:-8px;right:-8px;border:1px solid #171410;border-radius:999px;padding:3px 5px;background:#ff315f;color:white;box-shadow:2px 2px 0 #171410;font:900 8px/1 system-ui;letter-spacing:.04em}.xg-launcher-badge[hidden]{display:none}',
     '.xg-panel{display:none;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;font:14px/1.5 system-ui}',
     '.xg-panel.is-open{display:flex;flex-direction:column}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35}',
@@ -1078,4 +1091,66 @@
       GM_setValue(POSITION_KEYS.panel, panelPosition);
     }
   });
+
+  function ensureAttached() {
+    if (!document.body) return;
+    if (!launcher.isConnected) document.body.appendChild(launcher);
+    if (!panel.isConnected) document.body.appendChild(panel);
+  }
+
+  assistantInstance = {
+    showForRoom: function (roomId) {
+      ensureAttached();
+      CONFIG.roomId = roomId;
+      titleMeta.textContent = 'v' + installedVersion + ' · 当前房间 ' + roomId + ' · 按住标题可拖动';
+      launcher.classList.remove('is-route-hidden');
+      applyLauncherPosition();
+    },
+    hideForRoute: function () {
+      panel.classList.remove('is-open');
+      launcher.classList.add('is-route-hidden');
+    },
+    repair: function () {
+      ensureAttached();
+      launcher.classList.remove('is-route-hidden', 'is-hidden');
+      pageHidden = false;
+      applyLauncherPosition();
+    },
+  };
+  return assistantInstance;
+  }
+
+  function syncAssistant() {
+    const roomId = currentRoomId();
+    if (!roomId) {
+      if (assistantInstance) assistantInstance.hideForRoute();
+      return;
+    }
+    const instance = assistantInstance || mountAssistant(roomId);
+    if (instance) instance.showForRoom(roomId);
+  }
+
+  let repairQueued = false;
+  const pageObserver = new MutationObserver(function () {
+    if (repairQueued) return;
+    repairQueued = true;
+    window.queueMicrotask(function () {
+      repairQueued = false;
+      syncAssistant();
+    });
+  });
+  if (document.documentElement) pageObserver.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('popstate', syncAssistant);
+  window.addEventListener('hashchange', syncAssistant);
+  window.setInterval(syncAssistant, 1000);
+  GM_registerMenuCommand('强制恢复小龟助手', function () {
+    syncAssistant();
+    if (!assistantInstance || !currentRoomId()) {
+      window.alert('当前不是数字直播间页面，请先打开一个斗鱼直播间。');
+      return;
+    }
+    assistantInstance.repair();
+    window.alert('小龟助手已重新挂载到当前直播间。');
+  });
+  syncAssistant();
 })();
