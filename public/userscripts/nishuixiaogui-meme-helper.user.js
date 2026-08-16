@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.2
+// @version      0.9.3
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -1099,6 +1099,8 @@
   }
 
   assistantInstance = {
+    launcherConnected: function () { return launcher.isConnected; },
+    panelConnected: function () { return panel.isConnected; },
     showForRoom: function (roomId) {
       ensureAttached();
       CONFIG.roomId = roomId;
@@ -1120,31 +1122,42 @@
   return assistantInstance;
   }
 
-  function syncAssistant() {
-    const roomId = currentRoomId();
-    if (!roomId) {
-      if (assistantInstance) assistantInstance.hideForRoute();
-      return;
-    }
-    const instance = assistantInstance || mountAssistant(roomId);
-    if (instance) instance.showForRoom(roomId);
+  let lastRoomId = '';
+  let observedBody = null;
+
+  function observeCurrentBody() {
+    if (!document.body || document.body === observedBody) return;
+    pageObserver.disconnect();
+    pageObserver.observe(document.body, { childList: true });
+    observedBody = document.body;
   }
 
-  let repairQueued = false;
+  function syncAssistant(force) {
+    observeCurrentBody();
+    const roomId = currentRoomId();
+    const routeChanged = roomId !== lastRoomId;
+    lastRoomId = roomId;
+    if (!roomId) {
+      if (routeChanged && assistantInstance) assistantInstance.hideForRoute();
+      return;
+    }
+    const nodesMissing = Boolean(assistantInstance && (!assistantInstance.launcherConnected() || !assistantInstance.panelConnected()));
+    const instance = assistantInstance || mountAssistant(roomId);
+    if (instance && (force === true || routeChanged || nodesMissing)) instance.showForRoom(roomId);
+  }
+
+  let repairTimer = 0;
   const pageObserver = new MutationObserver(function () {
-    if (repairQueued) return;
-    repairQueued = true;
-    window.queueMicrotask(function () {
-      repairQueued = false;
-      syncAssistant();
-    });
+    if (!assistantInstance || !currentRoomId()) return;
+    if (assistantInstance.launcherConnected() && assistantInstance.panelConnected()) return;
+    window.clearTimeout(repairTimer);
+    repairTimer = window.setTimeout(function () { syncAssistant(true); }, 120);
   });
-  if (document.documentElement) pageObserver.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener('popstate', syncAssistant);
   window.addEventListener('hashchange', syncAssistant);
-  window.setInterval(syncAssistant, 1000);
+  window.setInterval(syncAssistant, 1500);
   GM_registerMenuCommand('强制恢复小龟助手', function () {
-    syncAssistant();
+    syncAssistant(true);
     if (!assistantInstance || !currentRoomId()) {
       window.alert('当前不是数字直播间页面，请先打开一个斗鱼直播间。');
       return;
@@ -1152,5 +1165,5 @@
     assistantInstance.repair();
     window.alert('小龟助手已重新挂载到当前直播间。');
   });
-  syncAssistant();
+  syncAssistant(true);
 })();
