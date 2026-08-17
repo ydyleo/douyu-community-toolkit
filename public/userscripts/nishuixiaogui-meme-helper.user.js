@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.4
+// @version      0.9.5
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -45,7 +45,7 @@
   const RELEASE_URL = /^http:\/\/(?:127\.0\.0\.1|localhost):4000$/.test(CONFIG.apiBase)
     ? CONFIG.apiBase.replace(/:4000$/, ':3000') + '/userscripts/release.json'
     : 'https://9765366.cn/userscripts/release.json';
-  const RELEASE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+  const RELEASE_CHECK_INTERVAL = 5 * 60 * 1000;
   const SUBMISSION_DRAFT_KEY = 'xiaoguiSubmissionDraft';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
@@ -1089,6 +1089,12 @@
   makeDraggable(header, panel, POSITION_KEYS.panel, true);
   applyLauncherPosition();
   void checkForUpdate(false);
+  window.setInterval(function () {
+    if (!document.hidden && currentRoomId()) void checkForUpdate(false);
+  }, RELEASE_CHECK_INTERVAL);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && currentRoomId()) void checkForUpdate(false);
+  });
   window.addEventListener('resize', function () {
     const launcherPosition = applyLauncherPosition();
     GM_setValue(POSITION_KEYS.launcher, launcherPosition);
