@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.3
+// @version      0.9.4
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -165,12 +165,17 @@
   const titleMeta = make('small', '', 'v' + installedVersion + ' · 当前房间 ' + CONFIG.roomId + ' · 按住标题可拖动');
   titleWrap.append(make('strong', '', '小龟烂梗助手'), titleMeta);
   const headerActions = make('div', 'xg-header-actions');
-  const submitToggleButton = make('button', 'xg-submit-toggle', '＋ 投稿');
+  const homepageLink = make('a', 'xg-homepage-link', '网站首页');
+  homepageLink.href = 'https://9765366.cn/';
+  homepageLink.target = '_blank';
+  homepageLink.rel = 'noopener noreferrer';
+  homepageLink.title = '在新标签页打开小龟烂梗补给站';
+  const submitToggleButton = make('button', 'xg-submit-toggle', '投稿');
   submitToggleButton.type = 'button';
   const closeButton = make('button', 'xg-close', '×');
   closeButton.type = 'button';
   closeButton.setAttribute('aria-label', '收起');
-  headerActions.append(submitToggleButton, closeButton);
+  headerActions.append(homepageLink, submitToggleButton, closeButton);
   header.append(titleWrap, headerActions);
 
   const updateNotice = make('div', 'xg-update-notice');
@@ -531,7 +536,7 @@
     browseView.hidden = active;
     submissionView.hidden = !active;
     submitToggleButton.classList.toggle('is-active', active);
-    submitToggleButton.textContent = active ? '投稿中' : '＋ 投稿';
+    submitToggleButton.textContent = active ? '投稿中' : '投稿';
     if (active) {
       showSubmissionStatus(selectedSubmissionTags.length
         ? '草稿已保留，已选择 ' + selectedSubmissionTags.length + ' / 5 个标签。'
@@ -1030,12 +1035,12 @@
     '.xg-launcher{position:fixed;z-index:2147483646;touch-action:none;user-select:none;border:1px solid #171410;border-radius:999px;padding:10px 15px;background:#f3ce49;color:#171410;box-shadow:4px 4px 0 #171410;font:800 13px/1.2 system-ui;cursor:grab}',
     '.xg-launcher.is-hidden,.xg-launcher.is-route-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
     '.xg-launcher-badge{position:absolute;top:-8px;right:-8px;border:1px solid #171410;border-radius:999px;padding:3px 5px;background:#ff315f;color:white;box-shadow:2px 2px 0 #171410;font:900 8px/1 system-ui;letter-spacing:.04em}.xg-launcher-badge[hidden]{display:none}',
-    '.xg-panel{display:none;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;font:14px/1.5 system-ui}',
-    '.xg-panel.is-open{display:flex;flex-direction:column}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35}',
+    '.xg-panel{display:flex;visibility:hidden;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;flex-direction:column;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;opacity:0;pointer-events:none;transform:translateY(12px) scale(.975);transform-origin:85% 100%;transition:opacity 160ms ease,transform 190ms cubic-bezier(.2,.8,.2,1),visibility 0s linear 190ms;font:14px/1.5 system-ui}',
+    '.xg-panel.is-open{visibility:visible;opacity:1;pointer-events:auto;transform:translateY(0) scale(1);transition:opacity 160ms ease,transform 190ms cubic-bezier(.2,.8,.2,1),visibility 0s}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35;transition:none}',
     '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
     '.xg-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 12px 16px;background:#f3ce49;border-bottom:1px solid #171410;touch-action:none;user-select:none;cursor:grab}',
     '.xg-panel.is-dragging .xg-header{cursor:grabbing}.xg-header strong,.xg-header small{display:block}.xg-header small{margin-top:2px;font-size:10px;opacity:.65}',
-    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-submit-toggle{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);font-size:10px;white-space:nowrap;cursor:pointer}.xg-submit-toggle.is-active{background:#171410;color:white}',
+    '.xg-header-actions{display:flex;align-items:center;gap:4px}.xg-homepage-link,.xg-submit-toggle{border:1px solid #171410;border-radius:999px;padding:5px 8px;background:rgba(255,255,255,.45);color:#171410;font-size:10px;line-height:1.2;text-decoration:none;white-space:nowrap;cursor:pointer}.xg-homepage-link:hover,.xg-submit-toggle:hover{background:white}.xg-submit-toggle.is-active{background:#171410;color:white}',
     '.xg-close{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer}',
     '.xg-update-notice{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid #171410;background:#fff3bf}',
     '.xg-update-notice[hidden]{display:none}.xg-update-notice strong,.xg-update-notice small{display:block}.xg-update-notice strong{font-size:11px}.xg-update-notice small{margin-top:2px;color:#746c61;font-size:9px}',
@@ -1077,6 +1082,7 @@
     '.xg-submission-tags-more{width:100%;border:1px dashed rgba(23,20,16,.45);padding:7px;background:#fff3bf;color:#171410;font-size:10px;font-weight:800;cursor:pointer}',
     '.xg-submission-tag-empty{margin:0;padding:10px;color:#746c61;text-align:center;font-size:10px}.xg-submission-status{margin:0;padding:8px 9px;background:#f4efe5;color:#625b52;font-size:10px}.xg-submission-status.is-error{background:#ffe8e2;color:#a42b20}.xg-submission-status.is-success{background:#eef8dc;color:#4d701f}',
     '.xg-submission-submit{border:1px solid #171410;padding:9px;background:#3667e9;color:white;font-weight:800;cursor:pointer}.xg-submission-submit:disabled{cursor:wait;opacity:.6}',
+    '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
   makeDraggable(launcher, launcher, POSITION_KEYS.launcher, false);
