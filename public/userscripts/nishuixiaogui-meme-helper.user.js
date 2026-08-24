@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.10.0
+// @version      0.11.0
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -50,6 +50,10 @@
   const BARRAGE_ACTIONS_KEY = 'xiaoguiBarrageActionsEnabled';
   const BARRAGE_INDEX_REFRESH_INTERVAL = 5 * 60 * 1000;
   const BARRAGE_ROOT_DISCOVERY_INTERVAL = 5000;
+  const LIBRARY_VERSION_KEY = 'xiaoguiLibraryVersion';
+  const LIBRARY_SYNC_FALLBACK_INTERVAL = 5 * 60 * 1000;
+  const LIBRARY_SYNC_MERGE_DELAY = 900;
+  const LIBRARY_SYNC_RETRY_DELAY = 30000;
   const BARRAGE_ITEM_SELECTOR = '.Barrage-listItem, [class*="Barrage-listItem"]';
   const BARRAGE_ROOT_SELECTOR = '#js-barrage-list, .Barrage-list, [class*="Barrage-list"]';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
@@ -159,7 +163,9 @@
   launcher.title = '点击打开，按住可拖动';
   const updateBadge = make('span', 'xg-launcher-badge', 'NEW');
   updateBadge.hidden = true;
-  launcher.append(updateBadge);
+  const libraryBadge = make('span', 'xg-library-badge', '库更新');
+  libraryBadge.hidden = true;
+  launcher.append(updateBadge, libraryBadge);
   const panel = make('section', 'xg-panel');
   panel.id = PANEL_ID;
   panel.setAttribute('aria-label', '溺水小龟烂梗助手');
@@ -325,7 +331,6 @@
   let barrageIndexLoadPromise = null;
   let barrageIndexLoadedAt = 0;
   let barrageRootDiscoveryTimer = 0;
-  let barrageIndexRefreshTimer = 0;
   let barrageProcessFrame = 0;
   let barrageIndexRetryTimer = 0;
   let barrageRunId = 0;
@@ -341,6 +346,150 @@
     updateBadge.hidden = !visible;
     launcher.classList.toggle('has-update', visible);
   }
+
+  function setLibraryBadge(visible) {
+    libraryBadge.hidden = !visible;
+    launcher.classList.toggle('has-library-update', visible);
+  }
+
+  function createLibrarySyncController(onLibraryChanged) {
+    let running = false;
+    let roomId = '';
+    let eventSource = null;
+    let reconnectTimer = 0;
+    let fallbackTimer = 0;
+    let deliveryTimer = 0;
+    let deliveryRunning = false;
+    let reconnectAttempt = 0;
+    let pendingVersion = '';
+    let pendingReason = '';
+    let runId = 0;
+    let appliedVersion = String(GM_getValue(LIBRARY_VERSION_KEY, ''));
+
+    function rememberVersion(version) {
+      if (!version) return;
+      appliedVersion = version;
+      GM_setValue(LIBRARY_VERSION_KEY, version);
+    }
+
+    function eventPayload(event) {
+      try {
+        return JSON.parse(event.data || '{}');
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function scheduleDelivery(version, reason, delay) {
+      if (!running || !version || version === appliedVersion) return;
+      pendingVersion = version;
+      pendingReason = reason || pendingReason || 'library-changed';
+      window.clearTimeout(deliveryTimer);
+      deliveryTimer = window.setTimeout(function () {
+        deliveryTimer = 0;
+        void deliverPending();
+      }, delay === undefined ? LIBRARY_SYNC_MERGE_DELAY : delay);
+    }
+
+    async function deliverPending() {
+      if (!running || deliveryRunning || !pendingVersion) return;
+      const version = pendingVersion;
+      const reason = pendingReason;
+      const deliveryRunId = runId;
+      pendingVersion = '';
+      pendingReason = '';
+      deliveryRunning = true;
+      let applied = false;
+      try {
+        applied = await onLibraryChanged({ version: version, reason: reason }) !== false;
+      } catch (error) {
+        console.warn('[小龟烂梗助手] 烂梗库自动同步失败', error);
+      } finally {
+        deliveryRunning = false;
+      }
+      if (!running || deliveryRunId !== runId) {
+        if (running && pendingVersion && !deliveryTimer) scheduleDelivery(pendingVersion, pendingReason, 0);
+        return;
+      }
+      if (applied) rememberVersion(version);
+      else if (running && version !== appliedVersion) scheduleDelivery(version, reason, LIBRARY_SYNC_RETRY_DELAY);
+      if (running && pendingVersion && !deliveryTimer) scheduleDelivery(pendingVersion, pendingReason, 0);
+    }
+
+    function scheduleReconnect() {
+      if (!running || reconnectTimer) return;
+      const baseDelay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 5)));
+      const delay = baseDelay + Math.round(Math.random() * 1200);
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(function () {
+        reconnectTimer = 0;
+        connect();
+      }, delay);
+    }
+
+    function connect() {
+      if (!running || eventSource || typeof window.EventSource !== 'function') return;
+      const source = new window.EventSource(CONFIG.apiBase + '/api/events/meme-library');
+      eventSource = source;
+      source.addEventListener('ready', function (event) {
+        if (source !== eventSource) return;
+        reconnectAttempt = 0;
+        const version = String(eventPayload(event).version || '');
+        if (!appliedVersion) rememberVersion(version);
+        else scheduleDelivery(version, 'reconnected');
+      });
+      source.addEventListener('library-changed', function (event) {
+        if (source !== eventSource) return;
+        const payload = eventPayload(event);
+        scheduleDelivery(String(payload.version || ''), String(payload.reason || 'library-changed'));
+      });
+      source.onerror = function () {
+        if (source !== eventSource) return;
+        source.close();
+        eventSource = null;
+        scheduleReconnect();
+      };
+    }
+
+    async function fallbackCheck() {
+      if (!running) return;
+      try {
+        const data = await request('GET', '/api/memes/version');
+        scheduleDelivery(String(data.version || ''), 'fallback');
+      } catch (error) {
+        console.warn('[小龟烂梗助手] 烂梗库兜底检查失败', error);
+      }
+    }
+
+    function stop() {
+      runId += 1;
+      running = false;
+      roomId = '';
+      window.clearTimeout(reconnectTimer);
+      window.clearTimeout(deliveryTimer);
+      window.clearInterval(fallbackTimer);
+      reconnectTimer = 0;
+      deliveryTimer = 0;
+      fallbackTimer = 0;
+      pendingVersion = '';
+      pendingReason = '';
+      if (eventSource) eventSource.close();
+      eventSource = null;
+    }
+
+    function start(nextRoomId) {
+      if (running && roomId === nextRoomId) return;
+      stop();
+      running = true;
+      roomId = nextRoomId;
+      connect();
+      fallbackTimer = window.setInterval(function () { void fallbackCheck(); }, LIBRARY_SYNC_FALLBACK_INTERVAL);
+    }
+
+    return { start: start, stop: stop };
+  }
+
+  const librarySyncController = createLibrarySyncController(handleLibraryChanged);
 
   function showUpdateNotice(release) {
     updateNotice.replaceChildren();
@@ -548,7 +697,7 @@
   async function loadSubmissionTags() {
     if (submissionTagsLoaded) {
       renderSubmissionTags();
-      return;
+      return true;
     }
     submissionTags.replaceChildren(make('p', 'xg-submission-tag-empty', '正在加载标签……'));
     try {
@@ -556,9 +705,11 @@
       submissionTagGroups = data.items || [];
       submissionTagsLoaded = true;
       renderSubmissionTags();
+      return true;
     } catch (error) {
       console.error('[小龟烂梗助手] 投稿标签加载失败', error);
       submissionTags.replaceChildren(make('p', 'xg-submission-tag-empty', '标签加载失败，仍可不选标签直接投稿。'));
+      return false;
     }
   }
 
@@ -887,10 +1038,8 @@
     barrageObservers.forEach(function (observer) { observer.disconnect(); });
     barrageObservers.clear();
     window.clearInterval(barrageRootDiscoveryTimer);
-    window.clearInterval(barrageIndexRefreshTimer);
     window.clearTimeout(barrageIndexRetryTimer);
     barrageRootDiscoveryTimer = 0;
-    barrageIndexRefreshTimer = 0;
     barrageIndexRetryTimer = 0;
     pendingBarrageItems.clear();
     if (barrageProcessFrame) window.cancelAnimationFrame(barrageProcessFrame);
@@ -904,18 +1053,11 @@
     const runId = barrageRunId;
     setBarrageToolsStatus('正在同步烂梗索引……');
     try {
-      await loadBarrageMemeIndex(false);
+      await loadBarrageMemeIndex(true);
       if (runId !== barrageRunId || !barrageActionsEnabled || !currentRoomId()) return;
       setBarrageToolsStatus('已开启 · 识别 ' + barrageMemeIndex.size + ' 条烂梗');
       syncBarrageObservers();
       barrageRootDiscoveryTimer = window.setInterval(syncBarrageObservers, BARRAGE_ROOT_DISCOVERY_INTERVAL);
-      barrageIndexRefreshTimer = window.setInterval(function () {
-        void loadBarrageMemeIndex(true).then(function () {
-          if (!barrageActionsEnabled) return;
-          setBarrageToolsStatus('已开启 · 识别 ' + barrageMemeIndex.size + ' 条烂梗');
-          refreshVisibleBarrageItems();
-        }).catch(function (error) { console.warn('[小龟烂梗助手] 弹幕索引刷新失败', error); });
-      }, BARRAGE_INDEX_REFRESH_INTERVAL);
     } catch (error) {
       if (runId !== barrageRunId || !barrageActionsEnabled) return;
       console.warn('[小龟烂梗助手] 弹幕索引加载失败', error);
@@ -1131,9 +1273,11 @@
       const data = await request('GET', '/api/memes?sort=popular&pageSize=50&query=' + encodeURIComponent(query) + '&tag=' + encodeURIComponent(activeTag));
       render(data.items || []);
       showStatus('找到 ' + (data.total || 0) + ' 条' + (activeTag ? ' #' + activeTag : '') + '，点文字复制，也可以填入或发送。');
+      return true;
     } catch (error) {
       console.error('[小龟烂梗助手] 搜索失败', error);
       showStatus('暂时连接不到烂梗库，请稍后再试，或在油猴菜单中检查服务地址。', true);
+      return false;
     } finally {
       searchButton.disabled = false;
     }
@@ -1270,6 +1414,41 @@
     }
   }
 
+  async function handleLibraryChanged(change) {
+    let synced = true;
+    submissionTagsLoaded = false;
+    submissionTagGroups = [];
+
+    if (barrageActionsEnabled) {
+      try {
+        await loadBarrageMemeIndex(true);
+        setBarrageToolsStatus('已开启 · 识别 ' + barrageMemeIndex.size + ' 条烂梗');
+        refreshVisibleBarrageItems();
+      } catch (error) {
+        synced = false;
+        setBarrageToolsStatus('即时同步失败，稍后自动重试', true);
+        console.warn('[小龟烂梗助手] 弹幕索引即时同步失败', error);
+      }
+    }
+
+    if (panel.classList.contains('is-open')) {
+      if (submissionView.hidden) {
+        const results = await Promise.all([loadQuickTags(), search()]);
+        synced = results[1] && synced;
+        if (results[1]) showStatus('烂梗库已更新，当前列表已自动同步。');
+      } else {
+        const tagsSynced = await loadSubmissionTags();
+        synced = tagsSynced && synced;
+        if (tagsSynced) showSubmissionStatus('烂梗库已更新，可选标签已经同步。');
+      }
+      if (synced) setLibraryBadge(false);
+    } else {
+      setLibraryBadge(true);
+    }
+    if (!synced && change.reason !== 'fallback') console.warn('[小龟烂梗助手] 将在 30 秒后重试烂梗库同步');
+    return synced;
+  }
+
   launcher.addEventListener('click', function () {
     if (suppressLauncherClick || pageHidden) return;
     panel.classList.toggle('is-open');
@@ -1278,8 +1457,9 @@
       window.requestAnimationFrame(function () {
         applyPanelPosition();
         void checkForUpdate(true);
-        void loadQuickTags();
-        void search();
+        void Promise.all([loadQuickTags(), search()]).then(function (responses) {
+          if (responses[1]) setLibraryBadge(false);
+        });
       });
     }
   });
@@ -1369,6 +1549,7 @@
     '.xg-launcher{position:fixed;z-index:2147483646;touch-action:none;user-select:none;border:1px solid #171410;border-radius:999px;padding:10px 15px;background:#f3ce49;color:#171410;box-shadow:4px 4px 0 #171410;font:800 13px/1.2 system-ui;cursor:grab}',
     '.xg-launcher.is-hidden,.xg-launcher.is-route-hidden{display:none}.xg-launcher.is-dragging{cursor:grabbing;box-shadow:2px 2px 0 #171410}',
     '.xg-launcher-badge{position:absolute;top:-8px;right:-8px;border:1px solid #171410;border-radius:999px;padding:3px 5px;background:#ff315f;color:white;box-shadow:2px 2px 0 #171410;font:900 8px/1 system-ui;letter-spacing:.04em}.xg-launcher-badge[hidden]{display:none}',
+    '.xg-library-badge{position:absolute;top:-8px;left:-8px;border:1px solid #171410;border-radius:999px;padding:3px 5px;background:#48a868;color:white;box-shadow:2px 2px 0 #171410;font:900 8px/1 system-ui;white-space:nowrap}.xg-library-badge[hidden]{display:none}',
     '.xg-panel{display:flex;visibility:hidden;position:fixed;z-index:2147483647;width:min(390px,calc(100vw - 28px));max-height:min(620px,72vh);overflow:hidden;flex-direction:column;background:#fffaf0;color:#171410;border:1px solid #171410;box-shadow:10px 10px 0 #ff5c35;opacity:0;pointer-events:none;transform:translateY(12px) scale(.975);transform-origin:85% 100%;transition:opacity 160ms ease,transform 190ms cubic-bezier(.2,.8,.2,1),visibility 0s linear 190ms;font:14px/1.5 system-ui}',
     '.xg-panel.is-open{visibility:visible;opacity:1;pointer-events:auto;transform:translateY(0) scale(1);transition:opacity 160ms ease,transform 190ms cubic-bezier(.2,.8,.2,1),visibility 0s}.xg-panel.is-dragging{box-shadow:5px 5px 0 #ff5c35;transition:none}',
     '.xg-header,.xg-search,.xg-quick-tags,.xg-tag-search,.xg-status{flex:0 0 auto}',
@@ -1459,9 +1640,11 @@
       titleMeta.textContent = 'v' + installedVersion + ' · 当前房间 ' + roomId + ' · 按住标题可拖动';
       launcher.classList.remove('is-route-hidden');
       applyLauncherPosition();
+      librarySyncController.start(roomId);
       if (barrageActionsEnabled) void startBarrageEnhancement();
     },
     hideForRoute: function () {
+      librarySyncController.stop();
       pauseBarrageEnhancement(true);
       panel.classList.remove('is-open');
       launcher.classList.add('is-route-hidden');
@@ -1471,6 +1654,7 @@
       launcher.classList.remove('is-route-hidden', 'is-hidden');
       pageHidden = false;
       applyLauncherPosition();
+      librarySyncController.start(CONFIG.roomId);
       if (barrageActionsEnabled) void startBarrageEnhancement();
     },
   };
