@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.9.5
+// @version      0.10.0
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -47,6 +47,11 @@
     : 'https://9765366.cn/userscripts/release.json';
   const RELEASE_CHECK_INTERVAL = 5 * 60 * 1000;
   const SUBMISSION_DRAFT_KEY = 'xiaoguiSubmissionDraft';
+  const BARRAGE_ACTIONS_KEY = 'xiaoguiBarrageActionsEnabled';
+  const BARRAGE_INDEX_REFRESH_INTERVAL = 5 * 60 * 1000;
+  const BARRAGE_ROOT_DISCOVERY_INTERVAL = 5000;
+  const BARRAGE_ITEM_SELECTOR = '.Barrage-listItem, [class*="Barrage-listItem"]';
+  const BARRAGE_ROOT_SELECTOR = '#js-barrage-list, .Barrage-list, [class*="Barrage-list"]';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
@@ -285,7 +290,20 @@
   );
   submissionView.append(submissionHeading, submissionForm);
 
-  panel.append(header, updateNotice, browseView, submissionView);
+  const barrageToolsFooter = make('footer', 'xg-barrage-tools');
+  const barrageToolsCopy = make('div', 'xg-barrage-tools-copy');
+  const barrageToolsTitle = make('strong', '', '弹幕快捷操作');
+  const barrageToolsStatus = make('small', '', '关闭 · 开启后识别已收录烂梗');
+  barrageToolsCopy.append(barrageToolsTitle, barrageToolsStatus);
+  const barrageToolsToggle = make('label', 'xg-switch');
+  const barrageToolsInput = make('input');
+  barrageToolsInput.type = 'checkbox';
+  barrageToolsInput.setAttribute('aria-label', '开启或关闭弹幕快捷操作');
+  const barrageToolsSlider = make('span', 'xg-switch-slider');
+  barrageToolsToggle.append(barrageToolsInput, barrageToolsSlider);
+  barrageToolsFooter.append(barrageToolsCopy, barrageToolsToggle);
+
+  panel.append(header, updateNotice, browseView, submissionView, barrageToolsFooter);
   document.body.append(launcher, panel);
 
   let cooldownUntil = 0;
@@ -302,6 +320,18 @@
   let submissionAllTagsExpanded = false;
   let submissionTagsLoaded = false;
   let submissionSending = false;
+  let barrageActionsEnabled = Boolean(GM_getValue(BARRAGE_ACTIONS_KEY, false));
+  let barrageMemeIndex = new Map();
+  let barrageIndexLoadPromise = null;
+  let barrageIndexLoadedAt = 0;
+  let barrageRootDiscoveryTimer = 0;
+  let barrageIndexRefreshTimer = 0;
+  let barrageProcessFrame = 0;
+  let barrageIndexRetryTimer = 0;
+  let barrageRunId = 0;
+  const barrageObservers = new Map();
+  const pendingBarrageItems = new Set();
+  barrageToolsInput.checked = barrageActionsEnabled;
 
   const previousRunVersion = String(GM_getValue('lastRunVersion', ''));
   const hadPreviousInstall = Boolean(previousRunVersion || GM_getValue('releaseCheckedAt', 0));
@@ -601,6 +631,307 @@
       submissionSending = false;
       submissionSubmitButton.disabled = false;
       submissionSubmitButton.textContent = '提交审核';
+    }
+  }
+
+  function normalizeBarrageLookupText(value) {
+    return String(value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLocaleLowerCase('zh-CN');
+  }
+
+  function setBarrageToolsStatus(message, isError) {
+    barrageToolsStatus.textContent = message;
+    barrageToolsStatus.classList.toggle('is-error', Boolean(isError));
+  }
+
+  async function loadBarrageMemeIndex(force) {
+    if (!force && barrageMemeIndex.size && Date.now() - barrageIndexLoadedAt < BARRAGE_INDEX_REFRESH_INTERVAL) {
+      return barrageMemeIndex;
+    }
+    if (barrageIndexLoadPromise) return barrageIndexLoadPromise;
+    barrageIndexLoadPromise = request('GET', '/api/memes/index')
+      .then(function (data) {
+        const nextIndex = new Map();
+        (data.items || []).forEach(function (item) {
+          const key = normalizeBarrageLookupText(item.text);
+          if (key && item.id && !nextIndex.has(key)) nextIndex.set(key, { id: item.id, text: item.text });
+        });
+        barrageMemeIndex = nextIndex;
+        barrageIndexLoadedAt = Date.now();
+        return barrageMemeIndex;
+      })
+      .finally(function () { barrageIndexLoadPromise = null; });
+    return barrageIndexLoadPromise;
+  }
+
+  function barrageTextElement(item) {
+    const selectors = [
+      '.Barrage-content .Barrage-text',
+      '[class*="Barrage-content"] [class*="Barrage-text"]',
+      '.Barrage-text',
+      '[class*="Barrage-text"]',
+      '[class*="danmuContent"]',
+    ];
+    for (const selector of selectors) {
+      const element = item.querySelector(selector);
+      if (element) return element;
+    }
+    return null;
+  }
+
+  function textWithoutBarrageActions(element) {
+    if (!element) return '';
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('.xg-barrage-actions, .dgq-barrage-actions').forEach(function (node) { node.remove(); });
+    return String(clone.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function barrageTextFromItem(item) {
+    const directText = textWithoutBarrageActions(barrageTextElement(item));
+    if (directText) return directText;
+    const fullText = textWithoutBarrageActions(item);
+    const matched = fullText.match(/[^：:]{1,30}[：:]\s*(.+)$/);
+    return matched ? matched[1].trim() : '';
+  }
+
+  function isOrdinaryBarrageItem(item) {
+    if (!item || item.closest('#' + PANEL_ID) || item.closest('.xg-barrage-actions')) return false;
+    const classText = String(item.className || '').toLocaleLowerCase('en-US');
+    if (/(notice|system|announce|welcome|recommend|gift|guard)/.test(classText)) return false;
+    const text = barrageTextFromItem(item);
+    if (!text) return false;
+    return !/^(欢迎来到|斗鱼严禁|系统[:：]|公告[:：]|提示[:：])/.test(text);
+  }
+
+  function collectBarrageItems(node, bucket) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.matches && node.matches(BARRAGE_ITEM_SELECTOR)) bucket.add(node);
+    if (node.querySelectorAll) node.querySelectorAll(BARRAGE_ITEM_SELECTOR).forEach(function (item) { bucket.add(item); });
+    const containingItem = node.closest && node.closest(BARRAGE_ITEM_SELECTOR);
+    if (containingItem) bucket.add(containingItem);
+  }
+
+  function queueBarrageItems(items) {
+    items.forEach(function (item) { pendingBarrageItems.add(item); });
+    if (barrageProcessFrame) return;
+    barrageProcessFrame = window.requestAnimationFrame(function () {
+      barrageProcessFrame = 0;
+      const queued = Array.from(pendingBarrageItems);
+      pendingBarrageItems.clear();
+      queued.forEach(enhanceBarrageItem);
+    });
+  }
+
+  function barrageRoots() {
+    const candidates = Array.from(document.querySelectorAll(BARRAGE_ROOT_SELECTOR)).filter(function (root) {
+      return root.isConnected && !root.matches(BARRAGE_ITEM_SELECTOR) && !root.closest('#' + PANEL_ID);
+    });
+    return candidates.filter(function (root) {
+      return !candidates.some(function (other) { return other !== root && other.contains(root); });
+    });
+  }
+
+  function detachExternalBarrageCounter(button) {
+    if (!button) return;
+    if (button.__xgBarrageCountHandler) button.removeEventListener('click', button.__xgBarrageCountHandler, true);
+    if (button.__xgBarrageOriginalText !== undefined) button.textContent = button.__xgBarrageOriginalText;
+    if (button.__xgBarrageOriginalTitle !== undefined) button.title = button.__xgBarrageOriginalTitle;
+    delete button.__xgBarrageCountHandler;
+    delete button.__xgBarrageMemeId;
+    delete button.__xgBarrageOriginalText;
+    delete button.__xgBarrageOriginalTitle;
+    delete button.__xgBarrageCountedAt;
+    button.classList.remove('xg-barrage-external-plus');
+  }
+
+  function bindExternalBarrageCounter(button, meme) {
+    if (button.__xgBarrageMemeId === meme.id) return;
+    detachExternalBarrageCounter(button);
+    button.__xgBarrageOriginalText = button.textContent;
+    button.__xgBarrageOriginalTitle = button.title;
+    button.__xgBarrageMemeId = meme.id;
+    button.textContent = '🐢+1';
+    button.title = '跟发并计入小龟烂梗热度';
+    button.classList.add('xg-barrage-external-plus');
+    button.__xgBarrageCountHandler = function (event) {
+      if (!event.isTrusted) return;
+      const now = Date.now();
+      if (now - Number(button.__xgBarrageCountedAt || 0) < CONFIG.cooldownMs) return;
+      button.__xgBarrageCountedAt = now;
+      void addCopyCount(meme);
+      showStatus('已通过快捷 +1 取用：' + meme.text);
+    };
+    button.addEventListener('click', button.__xgBarrageCountHandler, true);
+  }
+
+  function openBarrageSubmission(text) {
+    submissionText.value = String(text || '').slice(0, 240);
+    if (!submissionSource.value.trim()) submissionSource.value = '斗鱼房间 ' + CONFIG.roomId;
+    saveSubmissionDraft();
+    panel.classList.add('is-open');
+    setSubmissionView(true);
+    void reportEngagement();
+    window.requestAnimationFrame(function () { applyPanelPosition(); });
+    showSubmissionStatus('已带入这条弹幕，请选择标签后提交审核。');
+  }
+
+  function sendBarrageMeme(meme, button) {
+    if (Date.now() < cooldownUntil) {
+      showStatus('发送冷却中，请稍等。', true);
+      return;
+    }
+    if (!setChatText(meme.text)) return;
+    const sendButton = queryDeep('.ChatSend-button');
+    if (!sendButton) {
+      showStatus('已填入，但没有找到发送按钮，请手动发送。', true);
+      return;
+    }
+    button.disabled = true;
+    window.setTimeout(function () {
+      sendButton.click();
+      cooldownUntil = Date.now() + CONFIG.cooldownMs;
+      void addCopyCount(meme);
+      showStatus('已跟发并计入烂梗热度，3 秒后可再次发送。');
+      window.setTimeout(function () {
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = '🐢+1';
+        }
+      }, CONFIG.cooldownMs);
+    }, 80);
+  }
+
+  function enhanceBarrageItem(item) {
+    if (!barrageActionsEnabled || !item.isConnected || !isOrdinaryBarrageItem(item)) return;
+    const text = barrageTextFromItem(item);
+    const meme = barrageMemeIndex.get(normalizeBarrageLookupText(text));
+    const externalPlus = item.querySelector('.dgq-barrage-action-plus');
+    const mode = meme ? (externalPlus ? 'external-plus' : 'plus') : 'submit';
+    const currentActions = item.querySelector('.xg-barrage-actions');
+    if (item.dataset.xgBarrageMode === mode && item.dataset.xgBarrageText === text) {
+      if (meme && externalPlus) bindExternalBarrageCounter(externalPlus, meme);
+      return;
+    }
+
+    currentActions?.remove();
+    item.querySelectorAll('.xg-barrage-external-plus').forEach(detachExternalBarrageCounter);
+    item.dataset.xgBarrageMode = mode;
+    item.dataset.xgBarrageText = text;
+    item.classList.add('xg-barrage-enhanced');
+
+    if (meme && externalPlus) {
+      bindExternalBarrageCounter(externalPlus, meme);
+      return;
+    }
+
+    const actions = make('span', 'xg-barrage-actions');
+    const button = make('button', 'xg-barrage-action ' + (meme ? 'is-plus' : 'is-submit'), meme ? '🐢+1' : '🐢投稿');
+    button.type = 'button';
+    button.title = meme ? '跟发并计入小龟烂梗热度' : '把这条弹幕带入小龟投稿表单';
+    button.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (meme) sendBarrageMeme(meme, button);
+      else openBarrageSubmission(barrageTextFromItem(item) || text);
+    });
+    actions.append(button);
+    const textElement = barrageTextElement(item);
+    if (textElement && textElement.parentElement) textElement.parentElement.insertBefore(actions, textElement.nextSibling);
+    else item.append(actions);
+  }
+
+  function refreshVisibleBarrageItems() {
+    const items = new Set();
+    barrageRoots().forEach(function (root) { root.querySelectorAll(BARRAGE_ITEM_SELECTOR).forEach(function (item) { items.add(item); }); });
+    queueBarrageItems(items);
+  }
+
+  function syncBarrageObservers() {
+    if (!barrageActionsEnabled || !currentRoomId()) return;
+    barrageObservers.forEach(function (observer, root) {
+      if (!root.isConnected) {
+        observer.disconnect();
+        barrageObservers.delete(root);
+      }
+    });
+    barrageRoots().forEach(function (root) {
+      if (barrageObservers.has(root)) return;
+      const observer = new MutationObserver(function (mutations) {
+        const items = new Set();
+        mutations.forEach(function (mutation) {
+          mutation.addedNodes.forEach(function (node) { collectBarrageItems(node, items); });
+        });
+        if (items.size) queueBarrageItems(items);
+      });
+      observer.observe(root, { childList: true, subtree: true });
+      barrageObservers.set(root, observer);
+    });
+    refreshVisibleBarrageItems();
+  }
+
+  function removeBarrageEnhancements() {
+    document.querySelectorAll('.xg-barrage-actions').forEach(function (actions) { actions.remove(); });
+    document.querySelectorAll('.xg-barrage-external-plus').forEach(detachExternalBarrageCounter);
+    document.querySelectorAll('.xg-barrage-enhanced').forEach(function (item) {
+      item.classList.remove('xg-barrage-enhanced');
+      delete item.dataset.xgBarrageMode;
+      delete item.dataset.xgBarrageText;
+    });
+  }
+
+  function pauseBarrageEnhancement(removeButtons) {
+    barrageRunId += 1;
+    barrageObservers.forEach(function (observer) { observer.disconnect(); });
+    barrageObservers.clear();
+    window.clearInterval(barrageRootDiscoveryTimer);
+    window.clearInterval(barrageIndexRefreshTimer);
+    window.clearTimeout(barrageIndexRetryTimer);
+    barrageRootDiscoveryTimer = 0;
+    barrageIndexRefreshTimer = 0;
+    barrageIndexRetryTimer = 0;
+    pendingBarrageItems.clear();
+    if (barrageProcessFrame) window.cancelAnimationFrame(barrageProcessFrame);
+    barrageProcessFrame = 0;
+    if (removeButtons) removeBarrageEnhancements();
+  }
+
+  async function startBarrageEnhancement() {
+    if (!barrageActionsEnabled || !currentRoomId()) return;
+    pauseBarrageEnhancement(false);
+    const runId = barrageRunId;
+    setBarrageToolsStatus('正在同步烂梗索引……');
+    try {
+      await loadBarrageMemeIndex(false);
+      if (runId !== barrageRunId || !barrageActionsEnabled || !currentRoomId()) return;
+      setBarrageToolsStatus('已开启 · 识别 ' + barrageMemeIndex.size + ' 条烂梗');
+      syncBarrageObservers();
+      barrageRootDiscoveryTimer = window.setInterval(syncBarrageObservers, BARRAGE_ROOT_DISCOVERY_INTERVAL);
+      barrageIndexRefreshTimer = window.setInterval(function () {
+        void loadBarrageMemeIndex(true).then(function () {
+          if (!barrageActionsEnabled) return;
+          setBarrageToolsStatus('已开启 · 识别 ' + barrageMemeIndex.size + ' 条烂梗');
+          refreshVisibleBarrageItems();
+        }).catch(function (error) { console.warn('[小龟烂梗助手] 弹幕索引刷新失败', error); });
+      }, BARRAGE_INDEX_REFRESH_INTERVAL);
+    } catch (error) {
+      if (runId !== barrageRunId || !barrageActionsEnabled) return;
+      console.warn('[小龟烂梗助手] 弹幕索引加载失败', error);
+      setBarrageToolsStatus('索引连接失败，30 秒后重试', true);
+      barrageIndexRetryTimer = window.setTimeout(function () { void startBarrageEnhancement(); }, 30000);
+    }
+  }
+
+  function setBarrageActionsEnabled(enabled) {
+    barrageActionsEnabled = Boolean(enabled);
+    barrageToolsInput.checked = barrageActionsEnabled;
+    GM_setValue(BARRAGE_ACTIONS_KEY, barrageActionsEnabled);
+    if (barrageActionsEnabled) void startBarrageEnhancement();
+    else {
+      pauseBarrageEnhancement(true);
+      setBarrageToolsStatus('关闭 · 开启后识别已收录烂梗');
     }
   }
 
@@ -953,6 +1284,9 @@
     }
   });
   submitToggleButton.addEventListener('click', function () { setSubmissionView(submissionView.hidden); });
+  barrageToolsInput.addEventListener('change', function () {
+    setBarrageActionsEnabled(barrageToolsInput.checked);
+  });
   submissionBackButton.addEventListener('click', function () { setSubmissionView(false); });
   submissionForm.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -1082,6 +1416,12 @@
     '.xg-submission-tags-more{width:100%;border:1px dashed rgba(23,20,16,.45);padding:7px;background:#fff3bf;color:#171410;font-size:10px;font-weight:800;cursor:pointer}',
     '.xg-submission-tag-empty{margin:0;padding:10px;color:#746c61;text-align:center;font-size:10px}.xg-submission-status{margin:0;padding:8px 9px;background:#f4efe5;color:#625b52;font-size:10px}.xg-submission-status.is-error{background:#ffe8e2;color:#a42b20}.xg-submission-status.is-success{background:#eef8dc;color:#4d701f}',
     '.xg-submission-submit{border:1px solid #171410;padding:9px;background:#3667e9;color:white;font-weight:800;cursor:pointer}.xg-submission-submit:disabled{cursor:wait;opacity:.6}',
+    '.xg-barrage-tools{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-top:1px solid #171410;background:#fff3bf}',
+    '.xg-barrage-tools-copy{min-width:0}.xg-barrage-tools-copy strong,.xg-barrage-tools-copy small{display:block}.xg-barrage-tools-copy strong{font-size:11px}.xg-barrage-tools-copy small{margin-top:1px;overflow:hidden;color:#746c61;font-size:9px;white-space:nowrap;text-overflow:ellipsis}.xg-barrage-tools-copy small.is-error{color:#b3261e}',
+    '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
+    '.xg-barrage-actions{display:inline-flex;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
+    '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{background:rgba(54,103,233,.86)}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
+    '.xg-barrage-external-plus{outline:1px solid #f3ce49!important;outline-offset:1px}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
@@ -1119,8 +1459,10 @@
       titleMeta.textContent = 'v' + installedVersion + ' · 当前房间 ' + roomId + ' · 按住标题可拖动';
       launcher.classList.remove('is-route-hidden');
       applyLauncherPosition();
+      if (barrageActionsEnabled) void startBarrageEnhancement();
     },
     hideForRoute: function () {
+      pauseBarrageEnhancement(true);
       panel.classList.remove('is-open');
       launcher.classList.add('is-route-hidden');
     },
@@ -1129,6 +1471,7 @@
       launcher.classList.remove('is-route-hidden', 'is-hidden');
       pageHidden = false;
       applyLauncherPosition();
+      if (barrageActionsEnabled) void startBarrageEnhancement();
     },
   };
   return assistantInstance;
