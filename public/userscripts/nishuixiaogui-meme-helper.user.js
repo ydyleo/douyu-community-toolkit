@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.14.1
+// @version      0.14.2
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -344,6 +344,7 @@
   let screenBarrageHideTimer = 0;
   let screenBarragePositionTimers = [];
   let screenBarrageListening = false;
+  let screenBarrageMoveListening = false;
   const barrageObservers = new Map();
   const pendingBarrageItems = new Set();
   barrageToolsInput.checked = barrageActionsEnabled;
@@ -993,6 +994,7 @@
     if (!anchor) return;
     const button = ensureScreenBarrageButton();
     button.hidden = false;
+    startScreenBarrageMoveTracking();
     button.style.visibility = 'hidden';
     const width = button.offsetWidth || 50;
     const height = button.offsetHeight || 24;
@@ -1017,6 +1019,7 @@
     screenBarragePositionTimers.forEach(function (timer) { window.clearTimeout(timer); });
     screenBarragePositionTimers = [];
     if (screenBarrageButton) screenBarrageButton.hidden = true;
+    stopScreenBarrageMoveTracking();
     screenBarrageActiveItem = null;
     screenBarrageActiveText = '';
   }
@@ -1051,6 +1054,34 @@
     const target = event.target instanceof Element ? event.target : null;
     if (!target || (!target.closest(SCREEN_BARRAGE_ITEM_SELECTOR) && !target.closest(SCREEN_BARRAGE_MENU_SELECTOR))) return;
     scheduleScreenBarrageHide(420);
+  }
+
+  function handleScreenBarragePointerMove(event) {
+    if (!screenBarrageButton || screenBarrageButton.hidden) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const staysOpen = target.closest(SCREEN_BARRAGE_ITEM_SELECTOR)
+      || target.closest(SCREEN_BARRAGE_MENU_SELECTOR)
+      || target === screenBarrageButton
+      || screenBarrageButton.contains(target);
+    if (staysOpen) {
+      window.clearTimeout(screenBarrageHideTimer);
+      screenBarrageHideTimer = 0;
+      return;
+    }
+    if (!screenBarrageHideTimer) scheduleScreenBarrageHide(140);
+  }
+
+  function startScreenBarrageMoveTracking() {
+    if (screenBarrageMoveListening) return;
+    document.addEventListener('pointermove', handleScreenBarragePointerMove, true);
+    screenBarrageMoveListening = true;
+  }
+
+  function stopScreenBarrageMoveTracking() {
+    if (!screenBarrageMoveListening) return;
+    document.removeEventListener('pointermove', handleScreenBarragePointerMove, true);
+    screenBarrageMoveListening = false;
   }
 
   function startScreenBarrageEnhancement() {
