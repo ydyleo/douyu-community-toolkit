@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.13.2
+// @version      0.13.3
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -45,7 +45,7 @@
   const RELEASE_URL = /^http:\/\/(?:127\.0\.0\.1|localhost):4000$/.test(CONFIG.apiBase)
     ? CONFIG.apiBase.replace(/:4000$/, ':3000') + '/userscripts/release.json'
     : 'https://9765366.cn/userscripts/release.json';
-  const RELEASE_CHECK_INTERVAL = 60 * 1000;
+  const RELEASE_CHECK_INTERVAL = 5 * 60 * 1000;
   const SUBMISSION_DRAFT_KEY = 'xiaoguiSubmissionDraft';
   const BARRAGE_ACTIONS_KEY = 'xiaoguiBarrageActionsEnabled';
   const BARRAGE_INDEX_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -56,8 +56,6 @@
   const LIBRARY_SYNC_RETRY_DELAY = 30000;
   const BARRAGE_ITEM_SELECTOR = '.Barrage-listItem, [class*="Barrage-listItem"]';
   const BARRAGE_ROOT_SELECTOR = '#js-barrage-list, .Barrage-list, [class*="Barrage-list"]';
-  const SCREEN_BARRAGE_ACTIONS_SELECTOR = '#comment-dzjy-container';
-  const SCREEN_BARRAGE_CONTENT_SELECTOR = '#comment-higher-container';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
@@ -301,7 +299,7 @@
   const barrageToolsFooter = make('footer', 'xg-barrage-tools');
   const barrageToolsCopy = make('div', 'xg-barrage-tools-copy');
   const barrageToolsTitle = make('strong', '', '弹幕快捷操作');
-  const barrageToolsDescription = make('small', 'xg-barrage-tools-description', '弹幕栏和大屏弹幕显示 🐢+1，未收录可投稿');
+  const barrageToolsDescription = make('small', 'xg-barrage-tools-description', '弹幕栏显示 🐢+1，未收录内容可投稿');
   const barrageToolsStatus = make('small', 'xg-barrage-tools-status', '当前关闭');
   barrageToolsCopy.append(barrageToolsTitle, barrageToolsDescription, barrageToolsStatus);
   const barrageToolsToggle = make('label', 'xg-switch');
@@ -337,10 +335,6 @@
   let barrageProcessFrame = 0;
   let barrageIndexRetryTimer = 0;
   let barrageRunId = 0;
-  let screenBarrageObserver = null;
-  let screenBarrageObservedContainer = null;
-  let screenBarrageEnhanceTimer = 0;
-  let screenBarragePointerListening = false;
   let releaseCheckPromise = null;
   const barrageObservers = new Map();
   const pendingBarrageItems = new Set();
@@ -942,89 +936,6 @@
     }, 80);
   }
 
-  function screenBarrageText() {
-    const content = document.querySelector(SCREEN_BARRAGE_CONTENT_SELECTOR);
-    if (!content) return '';
-    const textElement = content.querySelector('[class*="text-"]') || content;
-    return String(textElement.textContent || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function enhanceScreenBarragePanel() {
-    if (!barrageActionsEnabled) return;
-    const actions = document.querySelector(SCREEN_BARRAGE_ACTIONS_SELECTOR);
-    const text = screenBarrageText();
-    if (!actions || !text) return;
-
-    const meme = barrageMemeIndex.get(normalizeBarrageLookupText(text));
-    const memeId = meme ? String(meme.id) : '';
-    const existing = actions.querySelector('.xg-screen-barrage-plus');
-    if (existing && existing.dataset.xgBarrageText === text && existing.dataset.xgMemeId === memeId) return;
-    actions.querySelectorAll('.xg-screen-barrage-control').forEach(function (control) { control.remove(); });
-
-    const separator = make('span', 'xg-screen-barrage-control xg-screen-barrage-separator', '|');
-    separator.setAttribute('aria-hidden', 'true');
-    const button = make('div', 'xg-screen-barrage-control xg-screen-barrage-plus labelfisrt-407af4 thirdBtn-06cde5 fourBtn-0845d4', '🐢+1');
-    button.setAttribute('role', 'button');
-    button.tabIndex = 0;
-    button.dataset.xgBarrageText = text;
-    button.dataset.xgMemeId = memeId;
-    button.title = meme
-      ? '跟发这条大屏弹幕并计入小龟烂梗热度'
-      : '跟发这条大屏弹幕；当前尚未收录，不计入热度';
-    button.addEventListener('click', function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      sendBarrageText(screenBarrageText() || text, meme, button);
-    });
-    button.addEventListener('keydown', function (event) {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      button.click();
-    });
-    actions.append(separator, button);
-  }
-
-  function syncScreenBarrageObserver() {
-    if (!barrageActionsEnabled) return;
-    const container = document.querySelector(SCREEN_BARRAGE_ACTIONS_SELECTOR);
-    if (!container) return;
-    if (container !== screenBarrageObservedContainer) {
-      screenBarrageObserver?.disconnect();
-      screenBarrageObservedContainer = container;
-      screenBarrageObserver = new MutationObserver(function () { enhanceScreenBarragePanel(); });
-      screenBarrageObserver.observe(container, { attributes: true, childList: true, subtree: true });
-    }
-    enhanceScreenBarragePanel();
-  }
-
-  function handleScreenBarragePointerOver(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target || !target.closest('[class*="danmuItem"], [class*="danmuContent"], #comment-higher-container, #comment-dzjy-container')) return;
-    window.clearTimeout(screenBarrageEnhanceTimer);
-    screenBarrageEnhanceTimer = window.setTimeout(syncScreenBarrageObserver, 0);
-  }
-
-  function startScreenBarrageEnhancement() {
-    if (!screenBarragePointerListening) {
-      document.addEventListener('pointerover', handleScreenBarragePointerOver, true);
-      screenBarragePointerListening = true;
-    }
-    syncScreenBarrageObserver();
-  }
-
-  function stopScreenBarrageEnhancement(removeButton) {
-    screenBarrageObserver?.disconnect();
-    screenBarrageObserver = null;
-    screenBarrageObservedContainer = null;
-    window.clearTimeout(screenBarrageEnhanceTimer);
-    screenBarrageEnhanceTimer = 0;
-    if (screenBarragePointerListening) {
-      document.removeEventListener('pointerover', handleScreenBarragePointerOver, true);
-      screenBarragePointerListening = false;
-    }
-    if (removeButton) document.querySelectorAll('.xg-screen-barrage-control').forEach(function (control) { control.remove(); });
-  }
-
   function enhanceBarrageItem(item) {
     if (!barrageActionsEnabled || !item.isConnected || !isOrdinaryBarrageItem(item)) return;
     const text = barrageTextFromItem(item);
@@ -1093,7 +1004,6 @@
       barrageObservers.set(root, observer);
     });
     refreshVisibleBarrageItems();
-    startScreenBarrageEnhancement();
   }
 
   function removeBarrageEnhancements() {
@@ -1116,7 +1026,6 @@
     pendingBarrageItems.clear();
     if (barrageProcessFrame) window.cancelAnimationFrame(barrageProcessFrame);
     barrageProcessFrame = 0;
-    stopScreenBarrageEnhancement(removeButtons);
     if (removeButtons) removeBarrageEnhancements();
   }
 
@@ -1497,7 +1406,6 @@
         await loadBarrageMemeIndex(true);
         setBarrageToolsStatus('已开启 · 已同步 ' + barrageMemeIndex.size + ' 条烂梗');
         refreshVisibleBarrageItems();
-        enhanceScreenBarragePanel();
       } catch (error) {
         synced = false;
         setBarrageToolsStatus('即时同步失败，稍后自动重试', true);
@@ -1676,20 +1584,18 @@
     '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
     '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
     '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
-    '.danmu-fbb2a3 [class*="danmuContent"]{pointer-events:auto!important}',
-    '.xg-screen-barrage-separator{display:inline-block!important;margin:0 4px!important;color:rgba(255,255,255,.78)!important;pointer-events:none!important}.xg-screen-barrage-plus{display:inline-flex!important;box-sizing:border-box!important;align-items:center!important;justify-content:center!important;margin:0!important;border:1px solid rgba(255,255,255,.72)!important;border-radius:999px!important;padding:3px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:1px 1px 0 rgba(23,20,16,.72)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-plus:hover{background:#fff3bf!important}.xg-screen-barrage-plus.is-disabled{cursor:wait!important;opacity:.55!important}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
   makeDraggable(launcher, launcher, POSITION_KEYS.launcher, false);
   makeDraggable(header, panel, POSITION_KEYS.panel, true);
   applyLauncherPosition();
-  void checkForUpdate(true);
+  void checkForUpdate(false);
   window.setInterval(function () {
     if (!document.hidden && currentRoomId()) void checkForUpdate(false);
   }, RELEASE_CHECK_INTERVAL);
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && currentRoomId()) void checkForUpdate(true);
+    if (!document.hidden && currentRoomId()) void checkForUpdate(false);
   });
   window.addEventListener('resize', function () {
     const launcherPosition = applyLauncherPosition();
