@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.13.0
+// @version      0.13.1
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -45,7 +45,7 @@
   const RELEASE_URL = /^http:\/\/(?:127\.0\.0\.1|localhost):4000$/.test(CONFIG.apiBase)
     ? CONFIG.apiBase.replace(/:4000$/, ':3000') + '/userscripts/release.json'
     : 'https://9765366.cn/userscripts/release.json';
-  const RELEASE_CHECK_INTERVAL = 5 * 60 * 1000;
+  const RELEASE_CHECK_INTERVAL = 60 * 1000;
   const SUBMISSION_DRAFT_KEY = 'xiaoguiSubmissionDraft';
   const BARRAGE_ACTIONS_KEY = 'xiaoguiBarrageActionsEnabled';
   const BARRAGE_INDEX_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -341,6 +341,7 @@
   let screenBarrageObservedContainer = null;
   let screenBarrageEnhanceTimer = 0;
   let screenBarragePointerListening = false;
+  let releaseCheckPromise = null;
   const barrageObservers = new Map();
   const pendingBarrageItems = new Set();
   barrageToolsInput.checked = barrageActionsEnabled;
@@ -535,25 +536,29 @@
     return true;
   }
 
-  async function checkForUpdate(force) {
+  function checkForUpdate(force) {
     const lastCheckedAt = Number(GM_getValue('releaseCheckedAt', 0));
-    if (!force && Date.now() - lastCheckedAt < RELEASE_CHECK_INTERVAL) return 'skipped';
-    try {
-      const release = await requestUrl('GET', RELEASE_URL + '?t=' + Date.now());
-      GM_setValue('releaseCheckedAt', Date.now());
-      if (installedVersion && compareVersions(release.version, installedVersion) > 0) {
-        showUpdateNotice(release);
-        return 'update';
-      }
-      if (!showInstalledReleaseNotice(release)) {
-        updateNotice.hidden = true;
-        setUpdateBadge(false);
-      }
-      return 'current';
-    } catch (error) {
-      console.warn('[小龟烂梗助手] 版本检查失败', error);
-      return 'error';
-    }
+    if (!force && Date.now() - lastCheckedAt < RELEASE_CHECK_INTERVAL) return Promise.resolve('skipped');
+    if (releaseCheckPromise) return releaseCheckPromise;
+    releaseCheckPromise = requestUrl('GET', RELEASE_URL + '?t=' + Date.now())
+      .then(function (release) {
+        GM_setValue('releaseCheckedAt', Date.now());
+        if (installedVersion && compareVersions(release.version, installedVersion) > 0) {
+          showUpdateNotice(release);
+          return 'update';
+        }
+        if (!showInstalledReleaseNotice(release)) {
+          updateNotice.hidden = true;
+          setUpdateBadge(false);
+        }
+        return 'current';
+      })
+      .catch(function (error) {
+        console.warn('[小龟烂梗助手] 版本检查失败', error);
+        return 'error';
+      })
+      .finally(function () { releaseCheckPromise = null; });
+    return releaseCheckPromise;
   }
 
   function defaultLauncherPosition() {
@@ -1666,12 +1671,12 @@
   makeDraggable(launcher, launcher, POSITION_KEYS.launcher, false);
   makeDraggable(header, panel, POSITION_KEYS.panel, true);
   applyLauncherPosition();
-  void checkForUpdate(false);
+  void checkForUpdate(true);
   window.setInterval(function () {
     if (!document.hidden && currentRoomId()) void checkForUpdate(false);
   }, RELEASE_CHECK_INTERVAL);
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && currentRoomId()) void checkForUpdate(false);
+    if (!document.hidden && currentRoomId()) void checkForUpdate(true);
   });
   window.addEventListener('resize', function () {
     const launcherPosition = applyLauncherPosition();
