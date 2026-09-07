@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.13.3
+// @version      0.14.0
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -56,6 +56,8 @@
   const LIBRARY_SYNC_RETRY_DELAY = 30000;
   const BARRAGE_ITEM_SELECTOR = '.Barrage-listItem, [class*="Barrage-listItem"]';
   const BARRAGE_ROOT_SELECTOR = '#js-barrage-list, .Barrage-list, [class*="Barrage-list"]';
+  const SCREEN_BARRAGE_ITEM_SELECTOR = '.danmu-fbb2a3 [class*="danmuContent"]';
+  const SCREEN_BARRAGE_MENU_SELECTOR = '#comment-dzjy-container';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
     launcher: 'xiaoguiLauncherPosition',
@@ -299,7 +301,7 @@
   const barrageToolsFooter = make('footer', 'xg-barrage-tools');
   const barrageToolsCopy = make('div', 'xg-barrage-tools-copy');
   const barrageToolsTitle = make('strong', '', '弹幕快捷操作');
-  const barrageToolsDescription = make('small', 'xg-barrage-tools-description', '弹幕栏显示 🐢+1，未收录内容可投稿');
+  const barrageToolsDescription = make('small', 'xg-barrage-tools-description', '弹幕栏和大屏弹幕显示 🐢+1，未收录可投稿');
   const barrageToolsStatus = make('small', 'xg-barrage-tools-status', '当前关闭');
   barrageToolsCopy.append(barrageToolsTitle, barrageToolsDescription, barrageToolsStatus);
   const barrageToolsToggle = make('label', 'xg-switch');
@@ -336,6 +338,12 @@
   let barrageIndexRetryTimer = 0;
   let barrageRunId = 0;
   let releaseCheckPromise = null;
+  let screenBarrageButton = null;
+  let screenBarrageActiveItem = null;
+  let screenBarrageActiveText = '';
+  let screenBarrageHideTimer = 0;
+  let screenBarragePositionTimers = [];
+  let screenBarrageListening = false;
   const barrageObservers = new Map();
   const pendingBarrageItems = new Set();
   barrageToolsInput.checked = barrageActionsEnabled;
@@ -936,6 +944,134 @@
     }, 80);
   }
 
+  function screenBarrageText(item) {
+    return String(item && item.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function screenBarrageMenuAnchorRect() {
+    const menu = document.querySelector(SCREEN_BARRAGE_MENU_SELECTOR);
+    if (!menu) return null;
+    const candidates = Array.from(menu.children).filter(function (element) {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    });
+    if (!candidates.length) return null;
+    return candidates.reduce(function (rightmost, element) {
+      const rect = element.getBoundingClientRect();
+      return !rightmost || rect.right > rightmost.right ? rect : rightmost;
+    }, null);
+  }
+
+  function ensureScreenBarrageButton() {
+    if (screenBarrageButton && screenBarrageButton.isConnected) return screenBarrageButton;
+    const button = make('button', 'xg-screen-barrage-floating-plus', '🐢+1');
+    button.type = 'button';
+    button.hidden = true;
+    button.addEventListener('pointerenter', function () {
+      window.clearTimeout(screenBarrageHideTimer);
+      screenBarrageHideTimer = 0;
+    });
+    button.addEventListener('pointerleave', function () { scheduleScreenBarrageHide(140); });
+    button.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = screenBarrageActiveText;
+      if (!text) return;
+      const meme = barrageMemeIndex.get(normalizeBarrageLookupText(text));
+      sendBarrageText(text, meme, button);
+      scheduleScreenBarrageHide(120);
+    });
+    document.body.append(button);
+    screenBarrageButton = button;
+    return button;
+  }
+
+  function positionScreenBarrageButton() {
+    if (!barrageActionsEnabled || !screenBarrageActiveItem || !screenBarrageActiveItem.isConnected) return;
+    const anchor = screenBarrageMenuAnchorRect();
+    if (!anchor) return;
+    const button = ensureScreenBarrageButton();
+    button.hidden = false;
+    button.style.visibility = 'hidden';
+    const width = button.offsetWidth || 50;
+    const height = button.offsetHeight || 24;
+    let left = anchor.right + 6;
+    if (left + width > window.innerWidth - 8) left = Math.max(8, anchor.left - width - 6);
+    const top = Math.max(8, Math.min(window.innerHeight - height - 8, anchor.top + (anchor.height - height) / 2));
+    button.style.left = Math.round(left) + 'px';
+    button.style.top = Math.round(top) + 'px';
+    button.style.visibility = 'visible';
+  }
+
+  function queueScreenBarragePositions() {
+    screenBarragePositionTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    screenBarragePositionTimers = [0, 60, 180].map(function (delay) {
+      return window.setTimeout(positionScreenBarrageButton, delay);
+    });
+  }
+
+  function hideScreenBarrageButton() {
+    window.clearTimeout(screenBarrageHideTimer);
+    screenBarrageHideTimer = 0;
+    screenBarragePositionTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    screenBarragePositionTimers = [];
+    if (screenBarrageButton) screenBarrageButton.hidden = true;
+    screenBarrageActiveItem = null;
+    screenBarrageActiveText = '';
+  }
+
+  function scheduleScreenBarrageHide(delay) {
+    window.clearTimeout(screenBarrageHideTimer);
+    screenBarrageHideTimer = window.setTimeout(hideScreenBarrageButton, delay);
+  }
+
+  function handleScreenBarragePointerOver(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const item = target.closest(SCREEN_BARRAGE_ITEM_SELECTOR);
+    if (item) {
+      const text = screenBarrageText(item);
+      if (!text) return;
+      window.clearTimeout(screenBarrageHideTimer);
+      screenBarrageHideTimer = 0;
+      screenBarrageActiveItem = item;
+      screenBarrageActiveText = text;
+      queueScreenBarragePositions();
+      return;
+    }
+    if (target.closest(SCREEN_BARRAGE_MENU_SELECTOR) || target === screenBarrageButton) {
+      window.clearTimeout(screenBarrageHideTimer);
+      screenBarrageHideTimer = 0;
+      queueScreenBarragePositions();
+    }
+  }
+
+  function handleScreenBarragePointerOut(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || (!target.closest(SCREEN_BARRAGE_ITEM_SELECTOR) && !target.closest(SCREEN_BARRAGE_MENU_SELECTOR))) return;
+    scheduleScreenBarrageHide(420);
+  }
+
+  function startScreenBarrageEnhancement() {
+    ensureScreenBarrageButton();
+    if (screenBarrageListening) return;
+    document.addEventListener('pointerover', handleScreenBarragePointerOver, true);
+    document.addEventListener('pointerout', handleScreenBarragePointerOut, true);
+    screenBarrageListening = true;
+  }
+
+  function stopScreenBarrageEnhancement() {
+    if (screenBarrageListening) {
+      document.removeEventListener('pointerover', handleScreenBarragePointerOver, true);
+      document.removeEventListener('pointerout', handleScreenBarragePointerOut, true);
+      screenBarrageListening = false;
+    }
+    hideScreenBarrageButton();
+    screenBarrageButton?.remove();
+    screenBarrageButton = null;
+  }
+
   function enhanceBarrageItem(item) {
     if (!barrageActionsEnabled || !item.isConnected || !isOrdinaryBarrageItem(item)) return;
     const text = barrageTextFromItem(item);
@@ -1004,6 +1140,7 @@
       barrageObservers.set(root, observer);
     });
     refreshVisibleBarrageItems();
+    startScreenBarrageEnhancement();
   }
 
   function removeBarrageEnhancements() {
@@ -1026,6 +1163,7 @@
     pendingBarrageItems.clear();
     if (barrageProcessFrame) window.cancelAnimationFrame(barrageProcessFrame);
     barrageProcessFrame = 0;
+    stopScreenBarrageEnhancement();
     if (removeButtons) removeBarrageEnhancements();
   }
 
@@ -1584,6 +1722,8 @@
     '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
     '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
     '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
+    '.danmu-fbb2a3 [class*="danmuContent"]{pointer-events:auto!important}',
+    '.xg-screen-barrage-floating-plus{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;border:1px solid rgba(255,255,255,.78)!important;border-radius:999px!important;padding:4px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:2px 2px 0 rgba(23,20,16,.8)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-floating-plus:hover{background:#fff3bf!important}.xg-screen-barrage-floating-plus:disabled{cursor:wait!important;opacity:.58!important}.xg-screen-barrage-floating-plus[hidden]{display:none!important}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
