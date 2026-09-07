@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.14.2
+// @version      0.14.3
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -1056,6 +1056,25 @@
     scheduleScreenBarrageHide(420);
   }
 
+  function screenBarragePointInside(element, x, y) {
+    if (!element || !element.isConnected) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0
+      && x >= rect.left && x <= rect.right
+      && y >= rect.top && y <= rect.bottom;
+  }
+
+  function screenBarragePointInsideMenu(x, y) {
+    const menu = document.querySelector(SCREEN_BARRAGE_MENU_SELECTOR);
+    if (!menu) return false;
+    return Array.from(menu.children).some(function (element) {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && screenBarragePointInside(element, x, y);
+    });
+  }
+
   function handleScreenBarragePointerMove(event) {
     if (!screenBarrageButton || screenBarrageButton.hidden) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -1063,7 +1082,10 @@
     const staysOpen = target.closest(SCREEN_BARRAGE_ITEM_SELECTOR)
       || target.closest(SCREEN_BARRAGE_MENU_SELECTOR)
       || target === screenBarrageButton
-      || screenBarrageButton.contains(target);
+      || screenBarrageButton.contains(target)
+      || screenBarragePointInside(screenBarrageActiveItem, event.clientX, event.clientY)
+      || screenBarragePointInsideMenu(event.clientX, event.clientY)
+      || screenBarragePointInside(screenBarrageButton, event.clientX, event.clientY);
     if (staysOpen) {
       window.clearTimeout(screenBarrageHideTimer);
       screenBarrageHideTimer = 0;
