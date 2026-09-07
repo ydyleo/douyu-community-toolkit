@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.11.0
+// @version      0.12.0
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -885,39 +885,6 @@
     });
   }
 
-  function detachExternalBarrageCounter(button) {
-    if (!button) return;
-    if (button.__xgBarrageCountHandler) button.removeEventListener('click', button.__xgBarrageCountHandler, true);
-    if (button.__xgBarrageOriginalText !== undefined) button.textContent = button.__xgBarrageOriginalText;
-    if (button.__xgBarrageOriginalTitle !== undefined) button.title = button.__xgBarrageOriginalTitle;
-    delete button.__xgBarrageCountHandler;
-    delete button.__xgBarrageMemeId;
-    delete button.__xgBarrageOriginalText;
-    delete button.__xgBarrageOriginalTitle;
-    delete button.__xgBarrageCountedAt;
-    button.classList.remove('xg-barrage-external-plus');
-  }
-
-  function bindExternalBarrageCounter(button, meme) {
-    if (button.__xgBarrageMemeId === meme.id) return;
-    detachExternalBarrageCounter(button);
-    button.__xgBarrageOriginalText = button.textContent;
-    button.__xgBarrageOriginalTitle = button.title;
-    button.__xgBarrageMemeId = meme.id;
-    button.textContent = '🐢+1';
-    button.title = '跟发并计入小龟烂梗热度';
-    button.classList.add('xg-barrage-external-plus');
-    button.__xgBarrageCountHandler = function (event) {
-      if (!event.isTrusted) return;
-      const now = Date.now();
-      if (now - Number(button.__xgBarrageCountedAt || 0) < CONFIG.cooldownMs) return;
-      button.__xgBarrageCountedAt = now;
-      void addCopyCount(meme);
-      showStatus('已通过快捷 +1 取用：' + meme.text);
-    };
-    button.addEventListener('click', button.__xgBarrageCountHandler, true);
-  }
-
   function openBarrageSubmission(text) {
     submissionText.value = String(text || '').slice(0, 240);
     if (!submissionSource.value.trim()) submissionSource.value = '斗鱼房间 ' + CONFIG.roomId;
@@ -929,12 +896,12 @@
     showSubmissionStatus('已带入这条弹幕，请选择标签后提交审核。');
   }
 
-  function sendBarrageMeme(meme, button) {
+  function sendBarrageText(text, meme, button) {
     if (Date.now() < cooldownUntil) {
       showStatus('发送冷却中，请稍等。', true);
       return;
     }
-    if (!setChatText(meme.text)) return;
+    if (!setChatText(text)) return;
     const sendButton = queryDeep('.ChatSend-button');
     if (!sendButton) {
       showStatus('已填入，但没有找到发送按钮，请手动发送。', true);
@@ -944,8 +911,12 @@
     window.setTimeout(function () {
       sendButton.click();
       cooldownUntil = Date.now() + CONFIG.cooldownMs;
-      void addCopyCount(meme);
-      showStatus('已跟发并计入烂梗热度，3 秒后可再次发送。');
+      if (meme) {
+        void addCopyCount(meme);
+        showStatus('已跟发并计入小龟烂梗热度，3 秒后可再次发送。');
+      } else {
+        showStatus('已跟发；这条内容尚未收录，不计入烂梗热度。');
+      }
       window.setTimeout(function () {
         if (button.isConnected) {
           button.disabled = false;
@@ -959,36 +930,38 @@
     if (!barrageActionsEnabled || !item.isConnected || !isOrdinaryBarrageItem(item)) return;
     const text = barrageTextFromItem(item);
     const meme = barrageMemeIndex.get(normalizeBarrageLookupText(text));
-    const externalPlus = item.querySelector('.dgq-barrage-action-plus');
-    const mode = meme ? (externalPlus ? 'external-plus' : 'plus') : 'submit';
+    const mode = meme ? 'indexed-plus' : 'unindexed-plus';
     const currentActions = item.querySelector('.xg-barrage-actions');
-    if (item.dataset.xgBarrageMode === mode && item.dataset.xgBarrageText === text) {
-      if (meme && externalPlus) bindExternalBarrageCounter(externalPlus, meme);
-      return;
-    }
+    if (item.dataset.xgBarrageMode === mode && item.dataset.xgBarrageText === text) return;
 
     currentActions?.remove();
-    item.querySelectorAll('.xg-barrage-external-plus').forEach(detachExternalBarrageCounter);
     item.dataset.xgBarrageMode = mode;
     item.dataset.xgBarrageText = text;
     item.classList.add('xg-barrage-enhanced');
 
-    if (meme && externalPlus) {
-      bindExternalBarrageCounter(externalPlus, meme);
-      return;
-    }
-
     const actions = make('span', 'xg-barrage-actions');
-    const button = make('button', 'xg-barrage-action ' + (meme ? 'is-plus' : 'is-submit'), meme ? '🐢+1' : '🐢投稿');
-    button.type = 'button';
-    button.title = meme ? '跟发并计入小龟烂梗热度' : '把这条弹幕带入小龟投稿表单';
-    button.addEventListener('click', function (event) {
+    const plusButton = make('button', 'xg-barrage-action is-plus', '🐢+1');
+    plusButton.type = 'button';
+    plusButton.title = meme
+      ? '跟发并计入小龟烂梗热度'
+      : '跟发；这条内容尚未收录，不计入烂梗热度';
+    plusButton.addEventListener('click', function (event) {
       event.preventDefault();
       event.stopPropagation();
-      if (meme) sendBarrageMeme(meme, button);
-      else openBarrageSubmission(barrageTextFromItem(item) || text);
+      sendBarrageText(barrageTextFromItem(item) || text, meme, plusButton);
     });
-    actions.append(button);
+    actions.append(plusButton);
+    if (!meme) {
+      const submitButton = make('button', 'xg-barrage-action is-submit', '投稿');
+      submitButton.type = 'button';
+      submitButton.title = '把这条弹幕带入小龟投稿表单';
+      submitButton.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openBarrageSubmission(barrageTextFromItem(item) || text);
+      });
+      actions.append(submitButton);
+    }
     const textElement = barrageTextElement(item);
     if (textElement && textElement.parentElement) textElement.parentElement.insertBefore(actions, textElement.nextSibling);
     else item.append(actions);
@@ -1025,7 +998,6 @@
 
   function removeBarrageEnhancements() {
     document.querySelectorAll('.xg-barrage-actions').forEach(function (actions) { actions.remove(); });
-    document.querySelectorAll('.xg-barrage-external-plus').forEach(detachExternalBarrageCounter);
     document.querySelectorAll('.xg-barrage-enhanced').forEach(function (item) {
       item.classList.remove('xg-barrage-enhanced');
       delete item.dataset.xgBarrageMode;
@@ -1600,9 +1572,8 @@
     '.xg-barrage-tools{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-top:1px solid #171410;background:#fff3bf}',
     '.xg-barrage-tools-copy{min-width:0}.xg-barrage-tools-copy strong,.xg-barrage-tools-copy small{display:block}.xg-barrage-tools-copy strong{font-size:11px}.xg-barrage-tools-copy small{margin-top:1px;overflow:hidden;color:#746c61;font-size:9px;white-space:nowrap;text-overflow:ellipsis}.xg-barrage-tools-copy small.is-error{color:#b3261e}',
     '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
-    '.xg-barrage-actions{display:inline-flex;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
-    '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{background:rgba(54,103,233,.86)}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
-    '.xg-barrage-external-plus{outline:1px solid #f3ce49!important;outline-offset:1px}',
+    '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
+    '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
