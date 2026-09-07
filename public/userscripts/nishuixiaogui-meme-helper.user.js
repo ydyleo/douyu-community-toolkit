@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.14.3
+// @version      0.15.0
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -339,12 +339,10 @@
   let barrageRunId = 0;
   let releaseCheckPromise = null;
   let screenBarrageButton = null;
-  let screenBarrageActiveItem = null;
+  let screenBarrageSeparator = null;
   let screenBarrageActiveText = '';
-  let screenBarrageHideTimer = 0;
-  let screenBarragePositionTimers = [];
+  let screenBarrageAttachTimers = [];
   let screenBarrageListening = false;
-  let screenBarrageMoveListening = false;
   const barrageObservers = new Map();
   const pendingBarrageItems = new Set();
   barrageToolsInput.checked = barrageActionsEnabled;
@@ -949,84 +947,72 @@
     return String(item && item.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
-  function screenBarrageMenuAnchorRect() {
+  function screenBarrageNativeGroup() {
     const menu = document.querySelector(SCREEN_BARRAGE_MENU_SELECTOR);
     if (!menu) return null;
-    const candidates = Array.from(menu.children).filter(function (element) {
-      const style = window.getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    });
-    if (!candidates.length) return null;
-    return candidates.reduce(function (rightmost, element) {
-      const rect = element.getBoundingClientRect();
-      return !rightmost || rect.right > rightmost.right ? rect : rightmost;
-    }, null);
+    const label = menu.querySelector('[class*="labelfisrt"]');
+    const group = label && label.parentElement;
+    // 只写入原生菜单的内层按钮组，绝不直接改动 douyuEx 观察的外层容器。
+    if (!label || !group || group === menu) return null;
+    return { group: group, label: label };
   }
 
-  function ensureScreenBarrageButton() {
-    if (screenBarrageButton && screenBarrageButton.isConnected) return screenBarrageButton;
-    const button = make('button', 'xg-screen-barrage-floating-plus', '🐢+1');
-    button.type = 'button';
-    button.hidden = true;
-    button.addEventListener('pointerenter', function () {
-      window.clearTimeout(screenBarrageHideTimer);
-      screenBarrageHideTimer = 0;
-    });
-    button.addEventListener('pointerleave', function () { scheduleScreenBarrageHide(140); });
+  function removeScreenBarrageControl() {
+    screenBarrageSeparator?.remove();
+    screenBarrageButton?.remove();
+    screenBarrageSeparator = null;
+    screenBarrageButton = null;
+  }
+
+  function ensureScreenBarrageButton(group, nativeLabel) {
+    if (screenBarrageButton && screenBarrageButton.isConnected
+      && screenBarrageSeparator && screenBarrageSeparator.isConnected
+      && screenBarrageButton.parentElement === group && screenBarrageSeparator.parentElement === group) {
+      if (screenBarrageButton !== group.lastElementChild) group.append(screenBarrageSeparator, screenBarrageButton);
+      return screenBarrageButton;
+    }
+    removeScreenBarrageControl();
+    const separator = make('span', 'xg-screen-barrage-native-control xg-screen-barrage-native-separator', '|');
+    separator.setAttribute('aria-hidden', 'true');
+    const button = make('div', nativeLabel.className + ' xg-screen-barrage-native-control xg-screen-barrage-native-plus', '🐢+1');
+    button.setAttribute('role', 'button');
+    button.tabIndex = 0;
     button.addEventListener('click', function (event) {
       event.preventDefault();
       event.stopPropagation();
+      if (button.disabled) return;
       const text = screenBarrageActiveText;
       if (!text) return;
       const meme = barrageMemeIndex.get(normalizeBarrageLookupText(text));
       sendBarrageText(text, meme, button);
-      scheduleScreenBarrageHide(120);
     });
-    document.body.append(button);
+    button.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      button.click();
+    });
+    group.append(separator, button);
+    screenBarrageSeparator = separator;
     screenBarrageButton = button;
     return button;
   }
 
-  function positionScreenBarrageButton() {
-    if (!barrageActionsEnabled || !screenBarrageActiveItem || !screenBarrageActiveItem.isConnected) return;
-    const anchor = screenBarrageMenuAnchorRect();
-    if (!anchor) return;
-    const button = ensureScreenBarrageButton();
-    button.hidden = false;
-    startScreenBarrageMoveTracking();
-    button.style.visibility = 'hidden';
-    const width = button.offsetWidth || 50;
-    const height = button.offsetHeight || 24;
-    let left = anchor.right + 6;
-    if (left + width > window.innerWidth - 8) left = Math.max(8, anchor.left - width - 6);
-    const top = Math.max(8, Math.min(window.innerHeight - height - 8, anchor.top + (anchor.height - height) / 2));
-    button.style.left = Math.round(left) + 'px';
-    button.style.top = Math.round(top) + 'px';
-    button.style.visibility = 'visible';
+  function attachScreenBarrageButton() {
+    if (!barrageActionsEnabled || !screenBarrageActiveText) return;
+    const native = screenBarrageNativeGroup();
+    if (!native) return;
+    const button = ensureScreenBarrageButton(native.group, native.label);
+    const meme = barrageMemeIndex.get(normalizeBarrageLookupText(screenBarrageActiveText));
+    button.title = meme
+      ? '跟发这条大屏弹幕并计入小龟烂梗热度'
+      : '跟发这条大屏弹幕；当前尚未收录，不计入热度';
   }
 
-  function queueScreenBarragePositions() {
-    screenBarragePositionTimers.forEach(function (timer) { window.clearTimeout(timer); });
-    screenBarragePositionTimers = [0, 60, 180].map(function (delay) {
-      return window.setTimeout(positionScreenBarrageButton, delay);
+  function queueScreenBarrageAttach() {
+    screenBarrageAttachTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    screenBarrageAttachTimers = [0, 60, 180].map(function (delay) {
+      return window.setTimeout(attachScreenBarrageButton, delay);
     });
-  }
-
-  function hideScreenBarrageButton() {
-    window.clearTimeout(screenBarrageHideTimer);
-    screenBarrageHideTimer = 0;
-    screenBarragePositionTimers.forEach(function (timer) { window.clearTimeout(timer); });
-    screenBarragePositionTimers = [];
-    if (screenBarrageButton) screenBarrageButton.hidden = true;
-    stopScreenBarrageMoveTracking();
-    screenBarrageActiveItem = null;
-    screenBarrageActiveText = '';
-  }
-
-  function scheduleScreenBarrageHide(delay) {
-    window.clearTimeout(screenBarrageHideTimer);
-    screenBarrageHideTimer = window.setTimeout(hideScreenBarrageButton, delay);
   }
 
   function handleScreenBarragePointerOver(event) {
@@ -1036,93 +1022,26 @@
     if (item) {
       const text = screenBarrageText(item);
       if (!text) return;
-      window.clearTimeout(screenBarrageHideTimer);
-      screenBarrageHideTimer = 0;
-      screenBarrageActiveItem = item;
       screenBarrageActiveText = text;
-      queueScreenBarragePositions();
-      return;
+      queueScreenBarrageAttach();
     }
-    if (target.closest(SCREEN_BARRAGE_MENU_SELECTOR) || target === screenBarrageButton) {
-      window.clearTimeout(screenBarrageHideTimer);
-      screenBarrageHideTimer = 0;
-      queueScreenBarragePositions();
-    }
-  }
-
-  function handleScreenBarragePointerOut(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target || (!target.closest(SCREEN_BARRAGE_ITEM_SELECTOR) && !target.closest(SCREEN_BARRAGE_MENU_SELECTOR))) return;
-    scheduleScreenBarrageHide(420);
-  }
-
-  function screenBarragePointInside(element, x, y) {
-    if (!element || !element.isConnected) return false;
-    const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0
-      && x >= rect.left && x <= rect.right
-      && y >= rect.top && y <= rect.bottom;
-  }
-
-  function screenBarragePointInsideMenu(x, y) {
-    const menu = document.querySelector(SCREEN_BARRAGE_MENU_SELECTOR);
-    if (!menu) return false;
-    return Array.from(menu.children).some(function (element) {
-      const style = window.getComputedStyle(element);
-      return style.display !== 'none'
-        && style.visibility !== 'hidden'
-        && screenBarragePointInside(element, x, y);
-    });
-  }
-
-  function handleScreenBarragePointerMove(event) {
-    if (!screenBarrageButton || screenBarrageButton.hidden) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
-    const staysOpen = target.closest(SCREEN_BARRAGE_ITEM_SELECTOR)
-      || target.closest(SCREEN_BARRAGE_MENU_SELECTOR)
-      || target === screenBarrageButton
-      || screenBarrageButton.contains(target)
-      || screenBarragePointInside(screenBarrageActiveItem, event.clientX, event.clientY)
-      || screenBarragePointInsideMenu(event.clientX, event.clientY)
-      || screenBarragePointInside(screenBarrageButton, event.clientX, event.clientY);
-    if (staysOpen) {
-      window.clearTimeout(screenBarrageHideTimer);
-      screenBarrageHideTimer = 0;
-      return;
-    }
-    if (!screenBarrageHideTimer) scheduleScreenBarrageHide(140);
-  }
-
-  function startScreenBarrageMoveTracking() {
-    if (screenBarrageMoveListening) return;
-    document.addEventListener('pointermove', handleScreenBarragePointerMove, true);
-    screenBarrageMoveListening = true;
-  }
-
-  function stopScreenBarrageMoveTracking() {
-    if (!screenBarrageMoveListening) return;
-    document.removeEventListener('pointermove', handleScreenBarragePointerMove, true);
-    screenBarrageMoveListening = false;
   }
 
   function startScreenBarrageEnhancement() {
-    ensureScreenBarrageButton();
     if (screenBarrageListening) return;
     document.addEventListener('pointerover', handleScreenBarragePointerOver, true);
-    document.addEventListener('pointerout', handleScreenBarragePointerOut, true);
     screenBarrageListening = true;
   }
 
   function stopScreenBarrageEnhancement() {
     if (screenBarrageListening) {
       document.removeEventListener('pointerover', handleScreenBarragePointerOver, true);
-      document.removeEventListener('pointerout', handleScreenBarragePointerOut, true);
       screenBarrageListening = false;
     }
-    hideScreenBarrageButton();
-    screenBarrageButton?.remove();
-    screenBarrageButton = null;
+    screenBarrageAttachTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    screenBarrageAttachTimers = [];
+    removeScreenBarrageControl();
+    screenBarrageActiveText = '';
   }
 
   function enhanceBarrageItem(item) {
@@ -1776,7 +1695,7 @@
     '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
     '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
     '.danmu-fbb2a3 > [data-comment-uuid],.danmu-fbb2a3 > [class*="danmuItem"]{pointer-events:auto!important}',
-    '.xg-screen-barrage-floating-plus{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;border:1px solid rgba(255,255,255,.78)!important;border-radius:999px!important;padding:4px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:2px 2px 0 rgba(23,20,16,.8)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-floating-plus:hover{background:#fff3bf!important}.xg-screen-barrage-floating-plus:disabled{cursor:wait!important;opacity:.58!important}.xg-screen-barrage-floating-plus[hidden]{display:none!important}',
+    '.xg-screen-barrage-native-control{flex:0 0 auto!important}.xg-screen-barrage-native-separator{display:inline-flex!important;align-items:center!important;margin:0 5px!important;color:rgba(255,255,255,.68)!important;font:400 12px/1 system-ui!important}.xg-screen-barrage-native-plus{display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;min-width:auto!important;margin:0!important;padding:0 6px!important;color:#f3ce49!important;font-weight:800!important;white-space:nowrap!important;cursor:pointer!important}.xg-screen-barrage-native-plus:hover{color:#fff3bf!important}.xg-screen-barrage-native-plus.is-disabled{cursor:wait!important;opacity:.58!important}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
