@@ -1,14 +1,24 @@
 {
-  "version": "0.14.0",
-  "releasedAt": "2026-09-07T16:36:01+08:00",
-  "title": "安全恢复大屏龟 +1",
+  "version": "0.14.1",
+  "releasedAt": "2026-09-07T16:46:05+08:00",
+  "title": "修复大屏弹幕识别",
   "notes": [
-    "大屏 🐢+1 改为原生菜单外的独立浮层，不再向 douyuEx 监听的容器插入任何节点。",
-    "douyuEx 开启时按钮跟在其 +1 后面，关闭时跟在斗鱼原本四个选项后面。",
-    "不使用大屏 DOM 观察器，只在鼠标指向弹幕的短时间内读取三次菜单坐标；版本检查保持五分钟。"
+    "修复 v0.14.0 仍使用旧版 danmuContent 类名，导致当前斗鱼大屏弹幕无法触发 🐢+1 的问题。",
+    "改为识别弹幕容器直属的 data-comment-uuid 和 danmuItem 节点，可覆盖当前 text-da6396、textWrap-f7cfb9 结构。",
+    "继续使用菜单外独立浮层，不写入或监听 douyuEx 容器；版本检查保持五分钟。"
   ],
   "downloadUrl": "https://9765366.cn/userscripts/nishuixiaogui-meme-helper.user.js",
   "history": [
+    {
+      "version": "0.14.1",
+      "releasedAt": "2026-09-07T16:46:05+08:00",
+      "title": "修复大屏弹幕识别",
+      "notes": [
+        "修复 v0.14.0 仍使用旧版 danmuContent 类名，导致当前斗鱼大屏弹幕无法触发 🐢+1 的问题。",
+        "改为识别弹幕容器直属的 data-comment-uuid 和 danmuItem 节点，可覆盖当前 text-da6396、textWrap-f7cfb9 结构。",
+        "继续使用菜单外独立浮层，不写入或监听 douyuEx 容器；版本检查保持五分钟。"
+      ]
+    },
     {
       "version": "0.14.0",
       "releasedAt": "2026-09-07T16:36:01+08:00",

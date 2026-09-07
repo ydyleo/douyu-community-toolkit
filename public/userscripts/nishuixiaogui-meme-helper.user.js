@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.14.0
+// @version      0.14.1
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -56,7 +56,7 @@
   const LIBRARY_SYNC_RETRY_DELAY = 30000;
   const BARRAGE_ITEM_SELECTOR = '.Barrage-listItem, [class*="Barrage-listItem"]';
   const BARRAGE_ROOT_SELECTOR = '#js-barrage-list, .Barrage-list, [class*="Barrage-list"]';
-  const SCREEN_BARRAGE_ITEM_SELECTOR = '.danmu-fbb2a3 [class*="danmuContent"]';
+  const SCREEN_BARRAGE_ITEM_SELECTOR = '.danmu-fbb2a3 > [data-comment-uuid], .danmu-fbb2a3 > [class*="danmuItem"]';
   const SCREEN_BARRAGE_MENU_SELECTOR = '#comment-dzjy-container';
   const SUBMISSION_CATEGORIES = ['经典语录', '直播事故', '观众二创', '年度名场面'];
   const POSITION_KEYS = {
@@ -1722,7 +1722,7 @@
     '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
     '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
     '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
-    '.danmu-fbb2a3 [class*="danmuContent"]{pointer-events:auto!important}',
+    '.danmu-fbb2a3 > [data-comment-uuid],.danmu-fbb2a3 > [class*="danmuItem"]{pointer-events:auto!important}',
     '.xg-screen-barrage-floating-plus{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;border:1px solid rgba(255,255,255,.78)!important;border-radius:999px!important;padding:4px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:2px 2px 0 rgba(23,20,16,.8)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-floating-plus:hover{background:#fff3bf!important}.xg-screen-barrage-floating-plus:disabled{cursor:wait!important;opacity:.58!important}.xg-screen-barrage-floating-plus[hidden]{display:none!important}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
