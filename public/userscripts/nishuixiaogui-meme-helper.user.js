@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         溺水小龟烂梗助手
 // @namespace    https://www.douyu.com/9765366
-// @version      0.13.1
+// @version      0.13.2
 // @description  在斗鱼直播间搜索、投稿、复制、填入和一键发送小龟烂梗
 // @author       小龟烂梗补给站
 // @match        https://www.douyu.com/*
@@ -920,6 +920,8 @@
       return;
     }
     button.disabled = true;
+    button.classList.add('is-disabled');
+    button.setAttribute('aria-disabled', 'true');
     window.setTimeout(function () {
       sendButton.click();
       cooldownUntil = Date.now() + CONFIG.cooldownMs;
@@ -932,6 +934,8 @@
       window.setTimeout(function () {
         if (button.isConnected) {
           button.disabled = false;
+          button.classList.remove('is-disabled');
+          button.setAttribute('aria-disabled', 'false');
           button.textContent = '🐢+1';
         }
       }, CONFIG.cooldownMs);
@@ -955,10 +959,13 @@
     const memeId = meme ? String(meme.id) : '';
     const existing = actions.querySelector('.xg-screen-barrage-plus');
     if (existing && existing.dataset.xgBarrageText === text && existing.dataset.xgMemeId === memeId) return;
-    existing?.remove();
+    actions.querySelectorAll('.xg-screen-barrage-control').forEach(function (control) { control.remove(); });
 
-    const button = make('button', 'xg-screen-barrage-plus', '🐢+1');
-    button.type = 'button';
+    const separator = make('span', 'xg-screen-barrage-control xg-screen-barrage-separator', '|');
+    separator.setAttribute('aria-hidden', 'true');
+    const button = make('div', 'xg-screen-barrage-control xg-screen-barrage-plus labelfisrt-407af4 thirdBtn-06cde5 fourBtn-0845d4', '🐢+1');
+    button.setAttribute('role', 'button');
+    button.tabIndex = 0;
     button.dataset.xgBarrageText = text;
     button.dataset.xgMemeId = memeId;
     button.title = meme
@@ -969,7 +976,12 @@
       event.stopPropagation();
       sendBarrageText(screenBarrageText() || text, meme, button);
     });
-    actions.append(button);
+    button.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      button.click();
+    });
+    actions.append(separator, button);
   }
 
   function syncScreenBarrageObserver() {
@@ -1010,7 +1022,7 @@
       document.removeEventListener('pointerover', handleScreenBarragePointerOver, true);
       screenBarragePointerListening = false;
     }
-    if (removeButton) document.querySelectorAll('.xg-screen-barrage-plus').forEach(function (button) { button.remove(); });
+    if (removeButton) document.querySelectorAll('.xg-screen-barrage-control').forEach(function (control) { control.remove(); });
   }
 
   function enhanceBarrageItem(item) {
@@ -1664,7 +1676,8 @@
     '.xg-switch{position:relative;display:inline-flex;flex:0 0 auto;width:36px;height:20px;cursor:pointer}.xg-switch input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.xg-switch-slider{box-sizing:border-box;width:36px;height:20px;border:1px solid #171410;border-radius:999px;background:#d8d1c4;transition:background 140ms ease}.xg-switch-slider::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:1px 1px 0 #171410;transition:transform 140ms ease}.xg-switch input:checked + .xg-switch-slider{background:#48a868}.xg-switch input:checked + .xg-switch-slider::after{transform:translateX(16px)}.xg-switch input:focus-visible + .xg-switch-slider{outline:2px solid #3667e9;outline-offset:2px}',
     '.xg-barrage-actions{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;opacity:.52;transition:opacity 120ms ease}.xg-barrage-enhanced:hover .xg-barrage-actions,.xg-barrage-actions:focus-within{opacity:1}',
     '.xg-barrage-action{border:1px solid rgba(255,255,255,.62);border-radius:999px;padding:1px 6px;background:rgba(23,20,16,.76);color:white;font:700 11px/1.55 system-ui;white-space:nowrap;cursor:pointer}.xg-barrage-action:hover{background:#f3ce49;color:#171410}.xg-barrage-action.is-submit{padding-inline:5px;background:rgba(54,103,233,.86);font-size:10px}.xg-barrage-action.is-submit:hover{background:#f3ce49;color:#171410}.xg-barrage-action:disabled{cursor:wait;opacity:.55}',
-    '.xg-screen-barrage-plus{display:inline-flex!important;box-sizing:border-box!important;align-items:center!important;justify-content:center!important;margin-left:6px!important;border:1px solid rgba(255,255,255,.72)!important;border-radius:999px!important;padding:3px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:1px 1px 0 rgba(23,20,16,.72)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-plus:hover{background:#fff3bf!important}.xg-screen-barrage-plus:disabled{cursor:wait!important;opacity:.55!important}',
+    '.danmu-fbb2a3 [class*="danmuContent"]{pointer-events:auto!important}',
+    '.xg-screen-barrage-separator{display:inline-block!important;margin:0 4px!important;color:rgba(255,255,255,.78)!important;pointer-events:none!important}.xg-screen-barrage-plus{display:inline-flex!important;box-sizing:border-box!important;align-items:center!important;justify-content:center!important;margin:0!important;border:1px solid rgba(255,255,255,.72)!important;border-radius:999px!important;padding:3px 8px!important;background:#f3ce49!important;color:#171410!important;box-shadow:1px 1px 0 rgba(23,20,16,.72)!important;font:800 11px/1.2 system-ui!important;white-space:nowrap!important;cursor:pointer!important;pointer-events:auto!important}.xg-screen-barrage-plus:hover{background:#fff3bf!important}.xg-screen-barrage-plus.is-disabled{cursor:wait!important;opacity:.55!important}',
     '@media (prefers-reduced-motion:reduce){.xg-panel,.xg-panel.is-open{transition:none;transform:none}}',
   ].join(''));
 
